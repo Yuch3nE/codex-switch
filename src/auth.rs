@@ -1,0 +1,95 @@
+use std::{fs, path::Path};
+
+use serde::Deserialize;
+use serde_json::Value;
+
+use crate::{jwt, model::AccountSummary};
+
+#[derive(Debug, Deserialize)]
+pub struct AuthFile {
+    pub auth_mode: String,
+    pub tokens: AuthTokens,
+    pub last_refresh: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct AuthTokens {
+    pub id_token: Option<String>,
+    pub access_token: Option<String>,
+    pub account_id: Option<String>,
+}
+
+pub fn build_account_summary(codex_home: &Path) -> anyhow::Result<AccountSummary> {
+    let auth_path = codex_home.join("auth.json");
+    build_account_summary_from_path(&auth_path)
+}
+
+pub fn build_account_summary_from_path(path: &Path) -> anyhow::Result<AccountSummary> {
+    let auth_file = load_auth_file(path)?;
+    build_account_summary_from_auth_file(auth_file)
+}
+
+pub fn load_auth_file(path: &Path) -> anyhow::Result<AuthFile> {
+    Ok(serde_json::from_slice(&fs::read(path)?)?)
+}
+
+fn build_account_summary_from_auth_file(auth_file: AuthFile) -> anyhow::Result<AccountSummary> {
+    let id_payload = auth_file
+        .tokens
+        .id_token
+        .as_deref()
+        .map(jwt::decode_payload)
+        .transpose()?;
+    let access_payload = auth_file
+        .tokens
+        .access_token
+        .as_deref()
+        .map(jwt::decode_payload)
+        .transpose()?;
+
+    let auth_meta = id_payload
+        .as_ref()
+        .and_then(|value| value.get("https://api.openai.com/auth"))
+        .or_else(|| {
+            access_payload
+                .as_ref()
+                .and_then(|value| value.get("https://api.openai.com/auth"))
+        });
+    let profile_meta = access_payload
+        .as_ref()
+        .and_then(|value| value.get("https://api.openai.com/profile"));
+
+    Ok(AccountSummary {
+        auth_mode: auth_file.auth_mode,
+        account_id: auth_file.tokens.account_id,
+        user_id: extract_string(auth_meta, "user_id"),
+        email: extract_root_string(id_payload.as_ref(), "email")
+            .or_else(|| extract_string(profile_meta, "email")),
+        email_verified: extract_root_bool(id_payload.as_ref(), "email_verified")
+            .or_else(|| extract_bool(profile_meta, "email_verified")),
+        name: extract_root_string(id_payload.as_ref(), "name"),
+        subscription_plan: extract_string(auth_meta, "chatgpt_plan_type"),
+        last_refresh: auth_file.last_refresh,
+        organization_count: auth_meta
+            .and_then(|value| value.get("organizations"))
+            .and_then(Value::as_array)
+            .map(|items| items.len())
+            .unwrap_or(0),
+    })
+}
+
+fn extract_string(value: Option<&Value>, key: &str) -> Option<String> {
+    value?.get(key)?.as_str().map(ToOwned::to_owned)
+}
+
+fn extract_bool(value: Option<&Value>, key: &str) -> Option<bool> {
+    value?.get(key)?.as_bool()
+}
+
+fn extract_root_string(value: Option<&Value>, key: &str) -> Option<String> {
+    value?.get(key)?.as_str().map(ToOwned::to_owned)
+}
+
+fn extract_root_bool(value: Option<&Value>, key: &str) -> Option<bool> {
+    value?.get(key)?.as_bool()
+}

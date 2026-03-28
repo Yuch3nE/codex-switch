@@ -1,0 +1,16 @@
+target/
+
+# Local Codex sandbox data
+.codex/
+
+# Conversation and skill runtime artifacts
+.agents/
+.superpowers/
+docs/superpowers/
+
+# Editor and system files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,542 @@
+use std::{
+    cmp::Ordering,
+    io::{stdout, IsTerminal},
+};
+
+use chrono::{Local, TimeZone};
+use crossterm::terminal;
+use serde::{Deserialize, Serialize};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+use crate::cli::OutputFormat;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AccountSummary {
+    pub auth_mode: String,
+    pub account_id: Option<String>,
+    pub user_id: Option<String>,
+    pub email: Option<String>,
+    pub email_verified: Option<bool>,
+    pub name: Option<String>,
+    pub subscription_plan: Option<String>,
+    pub last_refresh: Option<String>,
+    pub organization_count: usize,
+}
+
+impl AccountSummary {
+    pub fn render(&self, format: OutputFormat) -> anyhow::Result<String> {
+        match format {
+            OutputFormat::Json => Ok(serde_json::to_string_pretty(self)?),
+            OutputFormat::Text => Ok(render_panel(
+                "账号概览",
+                &[
+                    render_row("邮箱        ", self.email.as_deref().unwrap_or("")),
+                    render_row(
+                        "订阅等级    ",
+                        self.subscription_plan.as_deref().unwrap_or(""),
+                    ),
+                    closing_row("最后刷新    ", self.last_refresh.as_deref().unwrap_or("")),
+                ],
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct TokenUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub reasoning_output_tokens: u64,
+    pub total_tokens: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached_input_tokens: Option<u64>,
+}
+
+impl TokenUsage {
+    pub fn accumulate(&mut self, other: &TokenUsage) {
+        self.input_tokens += other.input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.reasoning_output_tokens += other.reasoning_output_tokens;
+        self.total_tokens += other.total_tokens;
+        let cached_total =
+            self.cached_input_tokens.unwrap_or(0) + other.cached_input_tokens.unwrap_or(0);
+        self.cached_input_tokens = if cached_total > 0
+            || self.cached_input_tokens.is_some()
+            || other.cached_input_tokens.is_some()
+        {
+            Some(cached_total)
+        } else {
+            None
+        };
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageSummary {
+    pub rollout_files: usize,
+    pub rollout_files_with_token_count: usize,
+    pub aggregate_tokens: TokenUsage,
+    pub latest_session_file: Option<String>,
+    pub latest_session_tokens: Option<TokenUsage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary: Option<PrimaryRateLimit>,
+}
+
+impl UsageSummary {
+    pub fn empty() -> Self {
+        Self {
+            rollout_files: 0,
+            rollout_files_with_token_count: 0,
+            aggregate_tokens: TokenUsage::default(),
+            latest_session_file: None,
+            latest_session_tokens: None,
+            primary: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageTableOutput {
+    pub profiles: Vec<UsageTableRow>,
+}
+
+impl UsageTableOutput {
+    pub fn from_profiles(profiles: ProfileListOutput) -> Self {
+        let mut rows = profiles
+            .profiles
+            .into_iter()
+            .map(|profile| UsageTableRow {
+                email: profile.email,
+                subscription_plan: profile.subscription_plan,
+                primary: profile.primary,
+                active: profile.active,
+            })
+            .collect::<Vec<_>>();
+
+        rows.sort_by(|left, right| {
+            usage_plan_rank(left.subscription_plan.as_deref())
+                .cmp(&usage_plan_rank(right.subscription_plan.as_deref()))
+                .then_with(|| {
+                    remaining_percent(right.primary.as_ref())
+                        .partial_cmp(&remaining_percent(left.primary.as_ref()))
+                        .unwrap_or(Ordering::Equal)
+                })
+                .then_with(|| left.email.cmp(&right.email))
+        });
+
+        Self { profiles: rows }
+    }
+
+    pub fn render(&self, format: OutputFormat) -> anyhow::Result<String> {
+        match format {
+            OutputFormat::Json => Ok(serde_json::to_string_pretty(self)?),
+            OutputFormat::Text => Ok(self.render_table()),
+        }
+    }
+
+    fn render_table(&self) -> String {
+        if self.profiles.is_empty() {
+            return "暂无已保存账号，可先执行 profile save".to_string();
+        }
+
+        let headers = ["邮箱", "订阅方案", "剩余额度", "窗口周期", "重置时间"];
+        let mut rows: Vec<(String, [String; 5])> = self
+            .profiles
+            .iter()
+            .map(|profile| {
+                (
+                    usage_plan_label(profile.subscription_plan.as_deref()),
+                    [
+                        render_active_email(profile.active, profile.email.as_deref()),
+                        profile.subscription_plan.clone().unwrap_or_default(),
+                        profile
+                            .primary
+                            .as_ref()
+                            .map(PrimaryRateLimit::render_remaining_progress)
+                            .unwrap_or_else(|| "╢░░░░░░░░░░░░░░░░░░░░╟ 0.0%".to_string()),
+                        profile
+                            .primary
+                            .as_ref()
+                            .map(PrimaryRateLimit::render_window_days)
+                            .unwrap_or_default(),
+                        profile
+                            .primary
+                            .as_ref()
+                            .map(PrimaryRateLimit::render_reset_time)
+                            .unwrap_or_default(),
+                    ],
+                )
+            })
+            .collect();
+
+        adapt_grouped_email_column(&mut rows);
+
+        let mut widths = [0usize; 5];
+        for (index, header) in headers.iter().enumerate() {
+            widths[index] = display_width(header);
+        }
+        for (_, row) in &rows {
+            for (index, value) in row.iter().enumerate() {
+                widths[index] = widths[index].max(display_width(value));
+            }
+        }
+
+        let mut lines = Vec::new();
+        lines.push(colorize_header("╭─ 账号额度总览"));
+        let header_row = headers.map(ToString::to_string);
+
+        for (index, (group, row)) in rows.iter().enumerate() {
+            let starts_group = index == 0 || rows[index - 1].0 != *group;
+            let ends_group = index + 1 == rows.len() || rows[index + 1].0 != *group;
+
+            if starts_group {
+                lines.push(colorize_group_heading(&format!("├─ {}", group)));
+                lines.push(render_table_rule('├', '┬', '┤', &widths));
+                lines.push(render_table_row(&header_row, &widths, true));
+                lines.push(render_table_rule('├', '┼', '┤', &widths));
+            }
+
+            lines.push(render_table_row(row, &widths, false));
+
+            if ends_group {
+                lines.push(render_table_rule('╰', '┴', '╯', &widths));
+            }
+        }
+        lines.join("\n")
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageTableRow {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subscription_plan: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary: Option<PrimaryRateLimit>,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PrimaryRateLimit {
+    pub used_percent: f64,
+    pub window_minutes: u64,
+    pub resets_at: u64,
+}
+
+impl PrimaryRateLimit {
+    pub fn render_remaining_progress(&self) -> String {
+        let width = 20usize;
+        let remaining_percent = (100.0 - self.used_percent).clamp(0.0, 100.0);
+        let filled = ((remaining_percent / 100.0) * width as f64)
+            .floor()
+            .clamp(0.0, width as f64) as usize;
+        let filled_bar = "█".repeat(filled);
+        let empty_bar = "░".repeat(width.saturating_sub(filled));
+        format!(
+            "╢{}{}╟ {:.1}%",
+            colorize_progress_filled(&filled_bar),
+            colorize_progress_empty(&empty_bar),
+            remaining_percent,
+        )
+    }
+
+    pub fn render_window_days(&self) -> String {
+        let days = self.window_minutes as f64 / 1440.0;
+        if (days - days.round()).abs() < f64::EPSILON {
+            format!("{} 天", days.round() as i64)
+        } else {
+            format!("{days:.1} 天")
+        }
+    }
+
+    pub fn render_reset_time(&self) -> String {
+        match Local.timestamp_opt(self.resets_at as i64, 0).single() {
+            Some(value) => {
+                let zone = match value.offset().local_minus_utc() {
+                    28_800 => "CST".to_string(),
+                    0 => "UTC".to_string(),
+                    _ => value.format("%:z").to_string(),
+                };
+                format!("{} {}", value.format("%Y-%m-%d %H:%M:%S"), zone)
+            }
+            None => self.resets_at.to_string(),
+        }
+    }
+}
+
+fn render_panel(title: &str, rows: &[String]) -> String {
+    if rows.is_empty() {
+        return format!("╭─ {}\n╰─", title);
+    }
+
+    let mut lines = Vec::with_capacity(rows.len() + 1);
+    lines.push(colorize_header(&format!("╭─ {}", title)));
+    lines.extend(rows.iter().cloned());
+    lines.join("\n")
+}
+
+fn render_table_rule(left: char, middle: char, right: char, widths: &[usize; 5]) -> String {
+    let separator = middle.to_string();
+    let segments = widths
+        .iter()
+        .map(|width| "─".repeat(*width + 2))
+        .collect::<Vec<_>>();
+    colorize_border(&format!("{}{}{}", left, segments.join(&separator), right))
+}
+
+fn render_table_row(values: &[String; 5], widths: &[usize; 5], is_header: bool) -> String {
+    let separator = colorize_border("│");
+    let rendered = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let padding = widths[index].saturating_sub(display_width(value));
+            let content = format!(" {}{} ", value, " ".repeat(padding));
+            if is_header {
+                colorize_table_header(&content)
+            } else {
+                content
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(&separator);
+
+    format!("{}{}{}", separator, rendered, colorize_border("│"))
+}
+
+fn adapt_grouped_email_column(rows: &mut [(String, [String; 5])]) {
+    let Some(terminal_width) = terminal_width() else {
+        return;
+    };
+
+    let reserved = 64usize;
+    if terminal_width <= reserved {
+        return;
+    }
+
+    let max_email_width = terminal_width.saturating_sub(reserved).clamp(18, 42);
+    for (_, row) in rows {
+        row[0] = truncate_for_width(&row[0], max_email_width);
+    }
+}
+
+fn terminal_width() -> Option<usize> {
+    if !supports_color() {
+        return None;
+    }
+
+    terminal::size().ok().map(|(width, _)| width as usize)
+}
+
+fn truncate_for_width(value: &str, max_width: usize) -> String {
+    if display_width(value) <= max_width {
+        return value.to_string();
+    }
+
+    let mut width = 0usize;
+    let mut truncated = String::new();
+
+    for ch in value.chars() {
+        let char_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + char_width + 1 > max_width {
+            break;
+        }
+        truncated.push(ch);
+        width += char_width;
+    }
+
+    format!("{}…", truncated)
+}
+
+fn display_width(value: &str) -> usize {
+    UnicodeWidthStr::width(strip_ansi(value).as_str())
+}
+
+fn strip_ansi(value: &str) -> String {
+    let mut result = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for next in chars.by_ref() {
+                if next == 'm' {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        result.push(ch);
+    }
+
+    result
+}
+
+fn render_row(label: &str, value: &str) -> String {
+    format!("│ {}│ {}", colorize_label(label), value)
+}
+
+fn closing_row(label: &str, value: &str) -> String {
+    format!("╰─ {}│ {}", colorize_label(label), value)
+}
+
+fn colorize_header(text: &str) -> String {
+    if supports_color() {
+        format!("\x1b[1;38;5;51m{}\x1b[0m", text)
+    } else {
+        text.to_string()
+    }
+}
+
+fn colorize_label(text: &str) -> String {
+    if supports_color() {
+        format!("\x1b[33m{}\x1b[0m", text)
+    } else {
+        text.to_string()
+    }
+}
+
+fn colorize_progress_filled(text: &str) -> String {
+    if supports_color() {
+        format!("\x1b[1;38;5;46m{}\x1b[0m", text)
+    } else {
+        text.to_string()
+    }
+}
+
+fn colorize_progress_empty(text: &str) -> String {
+    if supports_color() {
+        format!("\x1b[38;5;240m{}\x1b[0m", text)
+    } else {
+        text.to_string()
+    }
+}
+
+fn colorize_border(text: &str) -> String {
+    if supports_color() {
+        format!("\x1b[38;5;39m{}\x1b[0m", text)
+    } else {
+        text.to_string()
+    }
+}
+
+fn colorize_table_header(text: &str) -> String {
+    if supports_color() {
+        format!("\x1b[1;38;5;228m{}\x1b[0m", text)
+    } else {
+        text.to_string()
+    }
+}
+
+fn colorize_group_heading(text: &str) -> String {
+    if supports_color() {
+        format!("\x1b[1;38;5;219m{}\x1b[0m", text)
+    } else {
+        text.to_string()
+    }
+}
+
+fn render_active_email(active: bool, email: Option<&str>) -> String {
+    let email = email.unwrap_or_default();
+    if !active {
+        return email.to_string();
+    }
+
+    if supports_color() {
+        format!("\x1b[1;38;5;46m●\x1b[0m {}", email)
+    } else {
+        format!("● {}", email)
+    }
+}
+
+fn remaining_percent(primary: Option<&PrimaryRateLimit>) -> f64 {
+    primary
+        .map(|value| 100.0 - value.used_percent)
+        .unwrap_or(0.0)
+}
+
+fn usage_plan_rank(plan: Option<&str>) -> usize {
+    match plan.unwrap_or_default().to_ascii_lowercase().as_str() {
+        "pro" => 0,
+        "plus" => 1,
+        "team" => 2,
+        "free" => 3,
+        _ => 4,
+    }
+}
+
+fn usage_plan_label(plan: Option<&str>) -> String {
+    let normalized = plan.unwrap_or("unknown").trim();
+    if normalized.is_empty() {
+        "UNKNOWN".to_string()
+    } else {
+        normalized.to_ascii_uppercase()
+    }
+}
+
+fn supports_color() -> bool {
+    stdout().is_terminal()
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProfileSummary {
+    pub id: String,
+    pub name: String,
+    pub email: Option<String>,
+    pub subscription_plan: Option<String>,
+    pub account_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary: Option<PrimaryRateLimit>,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProfileListOutput {
+    pub active_profile: Option<String>,
+    pub profiles: Vec<ProfileSummary>,
+}
+
+impl ProfileListOutput {
+    pub fn render(&self, format: OutputFormat) -> anyhow::Result<String> {
+        match format {
+            OutputFormat::Json => Ok(serde_json::to_string_pretty(self)?),
+            OutputFormat::Text => {
+                let mut lines = vec![
+                    "╭─ Profiles".to_string(),
+                    format!(
+                        "│ 当前 profile: {}",
+                        self.active_profile.as_deref().unwrap_or("")
+                    ),
+                ];
+
+                for profile in &self.profiles {
+                    lines.push(format!(
+                        "├─ {} {} (id: {})",
+                        if profile.active { "●" } else { "○" },
+                        profile.name,
+                        profile.id,
+                    ));
+                    lines.push(format!(
+                        "│  邮箱: {}",
+                        profile.email.as_deref().unwrap_or(""),
+                    ));
+                    lines.push(format!(
+                        "│  订阅等级: {}{}",
+                        profile.subscription_plan.as_deref().unwrap_or(""),
+                        if profile.active { " | 当前" } else { "" }
+                    ));
+                }
+
+                if self.profiles.is_empty() {
+                    lines.push("╰─ 暂无 profiles".to_string());
+                } else {
+                    lines.push("╰─ 结束".to_string());
+                }
+
+                Ok(lines.join("\n"))
+            }
+        }
+    }
+}

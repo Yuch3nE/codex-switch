@@ -106,24 +106,16 @@ fn last_token_usage(file: &Path) -> anyhow::Result<Option<TokenCountSnapshot>> {
     Ok(last_usage)
 }
 
+fn u64_field(value: &Value, key: &str) -> u64 {
+    value.get(key).and_then(Value::as_u64).unwrap_or(0)
+}
+
 fn parse_token_usage(value: &Value) -> TokenUsage {
     TokenUsage {
-        input_tokens: value
-            .get("input_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        output_tokens: value
-            .get("output_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        reasoning_output_tokens: value
-            .get("reasoning_output_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        total_tokens: value
-            .get("total_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
+        input_tokens: u64_field(value, "input_tokens"),
+        output_tokens: u64_field(value, "output_tokens"),
+        reasoning_output_tokens: u64_field(value, "reasoning_output_tokens"),
+        total_tokens: u64_field(value, "total_tokens"),
         cached_input_tokens: value.get("cached_input_tokens").and_then(Value::as_u64),
     }
 }
@@ -134,11 +126,8 @@ fn parse_primary_rate_limit(value: &Value) -> PrimaryRateLimit {
             .get("used_percent")
             .and_then(Value::as_f64)
             .unwrap_or(0.0),
-        window_minutes: value
-            .get("window_minutes")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        resets_at: value.get("resets_at").and_then(Value::as_u64).unwrap_or(0),
+        window_minutes: u64_field(value, "window_minutes"),
+        resets_at: u64_field(value, "resets_at"),
     }
 }
 

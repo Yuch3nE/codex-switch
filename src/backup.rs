@@ -240,7 +240,7 @@ fn webdav_file_url(config: &BackupConfig, filename: &str) -> String {
 
 fn webdav_dir_url(config: &BackupConfig) -> String {
     let base = config.webdav_url.trim_end_matches('/');
-    let dir = config.remote_dir.trim_end_matches('/');
+    let dir = config.remote_dir.trim_matches('/');
     format!("{}/{}/", base, dir)
 }
 
@@ -522,7 +522,7 @@ fn config_from_values(values: Vec<String>) -> anyhow::Result<BackupConfig> {
     } else {
         Some(values[5].clone())
     };
-    let raw_dir = values[3].clone();
+    let raw_dir = values[3].trim_start_matches('/').to_string();
     let remote_dir = if raw_dir.trim().is_empty() {
         "codex-switch-backups/".to_string()
     } else if raw_dir.ends_with('/') {

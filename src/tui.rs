@@ -31,6 +31,38 @@ fn nav_prev(current: usize, len: usize) -> usize {
     if len == 0 { 0 } else if current == 0 { len - 1 } else { current - 1 }
 }
 
+/// 非阻塞轮询一次按键事件；有键且为 Press 时返回 Some(key)，超时或非按键返回 None。
+fn poll_key() -> anyhow::Result<Option<crossterm::event::KeyEvent>> {
+    if !event::poll(Duration::from_millis(250))? {
+        return Ok(None);
+    }
+    let Event::Key(key) = event::read()? else {
+        return Ok(None);
+    };
+    if key.kind != KeyEventKind::Press {
+        return Ok(None);
+    }
+    Ok(Some(key))
+}
+
+/// 生成 profile 的基础信息行（名称/ID/邮箱）
+fn profile_base_lines(profile: &ProfileSummary) -> Vec<Line<'static>> {
+    vec![
+        Line::from(vec![
+            Span::styled("名称: ", Style::default().fg(Color::Yellow)),
+            Span::raw(profile.name.clone()),
+        ]),
+        Line::from(vec![
+            Span::styled("ID: ", Style::default().fg(Color::Yellow)),
+            Span::raw(profile.id.clone()),
+        ]),
+        Line::from(vec![
+            Span::styled("邮箱: ", Style::default().fg(Color::Yellow)),
+            Span::raw(profile.email.clone().unwrap_or_default()),
+        ]),
+    ]
+}
+
 pub fn select_profile(output: ProfileListOutput) -> anyhow::Result<Option<ProfileSummary>> {
     if output.profiles.is_empty() {
         return Ok(None);
@@ -101,15 +133,7 @@ fn run_backup_selector(
     loop {
         terminal.draw(|frame| draw_backup_selector(frame, selector))?;
 
-        if !event::poll(Duration::from_millis(250))? {
-            continue;
-        }
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
+        let Some(key) = poll_key()? else { continue; };
 
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => selector.previous(),
@@ -221,16 +245,7 @@ fn run_selector(
     loop {
         terminal.draw(|frame| draw_selector(frame, selector))?;
 
-        if !event::poll(Duration::from_millis(250))? {
-            continue;
-        }
-
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
+        let Some(key) = poll_key()? else { continue; };
 
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => selector.previous(),
@@ -251,16 +266,7 @@ fn run_delete_selector(
     loop {
         terminal.draw(|frame| draw_delete_selector(frame, selector, confirm.as_ref()))?;
 
-        if !event::poll(Duration::from_millis(250))? {
-            continue;
-        }
-
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
+        let Some(key) = poll_key()? else { continue; };
 
         if confirm.is_some() {
             match key.code {
@@ -538,22 +544,9 @@ impl DeleteSelectionState {
             return vec![Line::from("暂无 profile")];
         };
 
-        let mut lines = vec![
-            Line::from(vec![
-                Span::styled("名称: ", Style::default().fg(Color::Yellow)),
-                Span::raw(profile.name.clone()),
-            ]),
-            Line::from(vec![
-                Span::styled("ID: ", Style::default().fg(Color::Yellow)),
-                Span::raw(profile.id.clone()),
-            ]),
-            Line::from(vec![
-                Span::styled("邮箱: ", Style::default().fg(Color::Yellow)),
-                Span::raw(profile.email.clone().unwrap_or_default()),
-            ]),
-            Line::from(""),
-            Line::from(format!("已选中: {} 个", self.selected.len())),
-        ];
+        let mut lines = profile_base_lines(profile);
+        lines.push(Line::from(""));
+        lines.push(Line::from(format!("已选中: {} 个", self.selected.len())));
 
         if let Some(message) = &self.message {
             lines.push(Line::from(""));
@@ -663,22 +656,9 @@ impl BackupSelectionState {
             None
         };
 
-        let mut lines = vec![
-            Line::from(vec![
-                Span::styled("名称: ", Style::default().fg(Color::Yellow)),
-                Span::raw(profile.name.clone()),
-            ]),
-            Line::from(vec![
-                Span::styled("ID: ", Style::default().fg(Color::Yellow)),
-                Span::raw(profile.id.clone()),
-            ]),
-            Line::from(vec![
-                Span::styled("邮箱: ", Style::default().fg(Color::Yellow)),
-                Span::raw(profile.email.clone().unwrap_or_default()),
-            ]),
-            Line::from(""),
-            Line::from(format!("已选中: {} 个", self.selected.len())),
-        ];
+        let mut lines = profile_base_lines(profile);
+        lines.push(Line::from(""));
+        lines.push(Line::from(format!("已选中: {} 个", self.selected.len())));
 
         if let Some(note) = existing_note {
             lines.push(Line::from(vec![
@@ -724,19 +704,8 @@ impl ProfileSelectorState {
             return vec![Line::from("暂无 profile")];
         };
 
-        vec![
-            Line::from(vec![
-                Span::styled("名称: ", Style::default().fg(Color::Yellow)),
-                Span::raw(profile.name.clone()),
-            ]),
-            Line::from(vec![
-                Span::styled("ID: ", Style::default().fg(Color::Yellow)),
-                Span::raw(profile.id.clone()),
-            ]),
-            Line::from(vec![
-                Span::styled("邮箱: ", Style::default().fg(Color::Yellow)),
-                Span::raw(profile.email.clone().unwrap_or_default()),
-            ]),
+        let mut lines = profile_base_lines(profile);
+        lines.extend([
             Line::from(vec![
                 Span::styled("订阅等级: ", Style::default().fg(Color::Yellow)),
                 Span::raw(profile.subscription_plan.clone().unwrap_or_default()),
@@ -746,12 +715,9 @@ impl ProfileSelectorState {
                 Span::raw(profile.account_id.clone().unwrap_or_default()),
             ]),
             Line::from(""),
-            Line::from(if profile.active {
-                "当前状态: 已激活"
-            } else {
-                "当前状态: 未激活"
-            }),
-        ]
+            Line::from(if profile.active { "当前状态: 已激活" } else { "当前状态: 未激活" }),
+        ]);
+        lines
     }
 }
 
@@ -801,15 +767,7 @@ fn run_config_editor(
     loop {
         terminal.draw(|frame| draw_config_editor(frame, state))?;
 
-        if !event::poll(Duration::from_millis(250))? {
-            continue;
-        }
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
+        let Some(key) = poll_key()? else { continue; };
 
         if state.edit_buf.is_some() {
             match key.code {
@@ -996,15 +954,7 @@ fn run_file_selector(
     loop {
         terminal.draw(|frame| draw_file_selector(frame, state))?;
 
-        if !event::poll(Duration::from_millis(250))? {
-            continue;
-        }
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
+        let Some(key) = poll_key()? else { continue; };
 
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => state.previous(),
@@ -1084,15 +1034,7 @@ fn run_password_input(
     loop {
         terminal.draw(|frame| draw_password_input(frame, state))?;
 
-        if !event::poll(Duration::from_millis(250))? {
-            continue;
-        }
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
+        let Some(key) = poll_key()? else { continue; };
 
         match key.code {
             KeyCode::Enter => return Ok(Some(state.buf.clone())),

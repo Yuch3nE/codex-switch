@@ -442,9 +442,13 @@ fn profile_import_cpa_file_normalizes_into_standard_auth_json() {
         Some("account-team-789")
     );
     assert_eq!(
-        value.get("refresh_token").and_then(Value::as_str),
+        value
+            .get("tokens")
+            .and_then(|tokens| tokens.get("refresh_token"))
+            .and_then(Value::as_str),
         Some("rt_example")
     );
+    assert!(value.get("refresh_token").is_none());
     assert!(value.get("access_token").is_none());
 }
 
@@ -517,9 +521,13 @@ fn profile_use_writes_standard_auth_json_after_cpa_import() {
     assert_eq!(value.get("auth_mode").and_then(Value::as_str), Some("chatgpt"));
     assert!(value.get("tokens").is_some());
     assert_eq!(
-        value.get("refresh_token").and_then(Value::as_str),
+        value
+            .get("tokens")
+            .and_then(|tokens| tokens.get("refresh_token"))
+            .and_then(Value::as_str),
         Some("rt_example")
     );
+    assert!(value.get("refresh_token").is_none());
 }
 
 #[test]

@@ -9,8 +9,8 @@ use crate::{jwt, model::AccountSummary};
 pub struct AuthFile {
     pub auth_mode: String,
     pub tokens: AuthTokens,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub refresh_token: Option<String>,
+    #[serde(default, rename = "refresh_token", skip_serializing)]
+    pub(crate) legacy_refresh_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_refresh: Option<String>,
 }
@@ -19,6 +19,8 @@ pub struct AuthFile {
 pub struct AuthTokens {
     pub id_token: Option<String>,
     pub access_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
     pub account_id: Option<String>,
 }
 
@@ -33,7 +35,7 @@ pub fn build_account_summary_from_path(path: &Path) -> anyhow::Result<AccountSum
 }
 
 pub fn load_auth_file(path: &Path) -> anyhow::Result<AuthFile> {
-    Ok(serde_json::from_slice(&fs::read(path)?)?)
+    Ok(canonicalize_auth_file(serde_json::from_slice(&fs::read(path)?)?))
 }
 
 pub fn build_account_summary_from_auth_file(auth_file: AuthFile) -> anyhow::Result<AccountSummary> {
@@ -79,6 +81,14 @@ pub fn build_account_summary_from_auth_file(auth_file: AuthFile) -> anyhow::Resu
             .map(|items| items.len())
             .unwrap_or(0),
     })
+}
+
+pub fn canonicalize_auth_file(mut auth_file: AuthFile) -> AuthFile {
+    if auth_file.tokens.refresh_token.is_none() {
+        auth_file.tokens.refresh_token = auth_file.legacy_refresh_token.take();
+    }
+
+    auth_file
 }
 
 fn extract_string(value: Option<&Value>, key: &str) -> Option<String> {

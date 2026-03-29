@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::{
     auth,
@@ -93,10 +93,10 @@ pub fn use_profile(codex_home: &Path, switch_home: &Path, name: &str) -> anyhow:
     fs::create_dir_all(&rollback_dir)?;
 
     if current_auth.exists() {
-        fs::copy(&current_auth, rollback_dir.join("auth.json"))?;
+        copy_auth_json_with_canonicalization(&current_auth, &rollback_dir.join("auth.json"))?;
     }
 
-    fs::copy(&profile_auth, &current_auth)?;
+    copy_auth_json_with_canonicalization(&profile_auth, &current_auth)?;
     write_state(
         switch_home,
         &ProfilesState {
@@ -320,11 +320,45 @@ fn cpa_auth_to_auth_file(cpa: CpaAuthFile, path: &Path) -> anyhow::Result<auth::
         tokens: auth::AuthTokens {
             id_token: Some(cpa.id_token),
             access_token: Some(cpa.access_token),
+            refresh_token: cpa.refresh_token,
             account_id: Some(cpa.account_id),
         },
-        refresh_token: cpa.refresh_token,
+        legacy_refresh_token: None,
         last_refresh: cpa.last_refresh,
     })
+}
+
+fn copy_auth_json_with_canonicalization(source: &Path, destination: &Path) -> anyhow::Result<()> {
+    let mut value: Value = serde_json::from_slice(&fs::read(source)?)?;
+    canonicalize_auth_json_value(&mut value);
+    fs::write(destination, serde_json::to_vec_pretty(&value)?)?;
+    Ok(())
+}
+
+fn canonicalize_auth_json_value(value: &mut Value) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+
+    let refresh_token = object
+        .remove("refresh_token")
+        .and_then(|value| value.as_str().map(ToOwned::to_owned));
+
+    let Some(refresh_token) = refresh_token else {
+        return;
+    };
+
+    let tokens = object
+        .entry("tokens")
+        .or_insert_with(|| Value::Object(Map::new()));
+
+    let Some(tokens_object) = tokens.as_object_mut() else {
+        return;
+    };
+
+    tokens_object
+        .entry("refresh_token".to_string())
+        .or_insert(Value::String(refresh_token));
 }
 
 fn state_path(switch_home: &Path) -> PathBuf {

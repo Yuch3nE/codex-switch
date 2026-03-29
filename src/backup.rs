@@ -256,9 +256,15 @@ pub fn webdav_mkcol(config: &BackupConfig) -> anyhow::Result<()> {
         .context("WebDAV MKCOL 请求失败")?;
 
     match resp.status().as_u16() {
-        // 201 Created, 405 Method Not Allowed (server disallows MKCOL but dir exists),
-        // 409 Conflict (collection already exists on some WebDAV servers, e.g. Nextcloud)
-        201 | 405 | 409 => Ok(()),
+        // 201 Created, 405 Method Not Allowed (collection already exists)
+        201 | 405 => Ok(()),
+        409 => bail!(
+            "WebDAV MKCOL 失败，状态码 409（路径冲突）\n\
+             常见原因：\n\
+             1. WebDAV URL 中间路径不存在（Nextcloud 应为 .../remote.php/dav/files/用户名/）\n\
+             2. 远端目录包含多层路径而中间目录尚未创建\n\
+             请用 --setup 重新检查配置"
+        ),
         code => bail!("WebDAV MKCOL 失败，状态码: {}", code),
     }
 }
@@ -275,6 +281,12 @@ pub fn webdav_put(config: &BackupConfig, filename: &str, data: &[u8]) -> anyhow:
     let code = resp.status().as_u16();
     if matches!(code, 200 | 201 | 204) {
         Ok(())
+    } else if code == 409 {
+        bail!(
+            "WebDAV PUT 失败，状态码 409（路径冲突）\n\
+             远端目录可能不存在，请检查 WebDAV URL 和远端目录配置\n\
+             使用 --setup 重新配置"
+        )
     } else {
         bail!("WebDAV PUT 失败，状态码: {}", code)
     }

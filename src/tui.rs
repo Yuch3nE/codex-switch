@@ -1234,27 +1234,8 @@ impl ConfigEditorState {
                 Style::default().fg(Color::DarkGray),
             );
         }
-        let v = &self.values[i];
-        let display = if v.chars().count() > 15 {
-            format!("{}…", &v[..v.char_indices().nth(14).map(|(i, _)| i).unwrap_or(v.len())])
-        } else {
-            v.clone()
-        };
-        (display, Style::default().fg(Color::White))
-    }
-
-    /// 右侧详情面板的完整值 span（敏感字段仍掩码，但显示实际字符数）
-    fn detail_value_span(&self, i: usize) -> Span<'static> {
-        if self.values[i].is_empty() {
-            Span::styled("(空)", Style::default().fg(Color::DarkGray))
-        } else if self.sensitive[i] {
-            Span::styled(
-                "●".repeat(self.values[i].len()),
-                Style::default().fg(Color::DarkGray),
-            )
-        } else {
-            Span::styled(self.values[i].clone(), Style::default().fg(Color::White))
-        }
+        // 全宽展示，不截断
+        (self.values[i].clone(), Style::default().fg(Color::White))
     }
 }
 

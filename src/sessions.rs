@@ -86,18 +86,16 @@ fn last_token_usage(file: &Path) -> anyhow::Result<Option<TokenCountSnapshot>> {
             .or_else(|| info.get("last_token_usage"));
 
         if let Some(snapshot) = snapshot {
+            let rate_limits = payload.get("rate_limits");
             last_usage = Some(TokenCountSnapshot {
                 usage: parse_token_usage(snapshot),
-                primary: payload
-                    .get("rate_limits")
+                primary: rate_limits
                     .and_then(|value| value.get("primary"))
                     .map(parse_primary_rate_limit),
-                secondary: payload
-                    .get("rate_limits")
+                secondary: rate_limits
                     .and_then(|value| value.get("secondary"))
                     .map(parse_primary_rate_limit),
-                plan_type: payload
-                    .get("rate_limits")
+                plan_type: rate_limits
                     .and_then(|value| value.get("plan_type"))
                     .and_then(Value::as_str)
                     .map(ToOwned::to_owned),

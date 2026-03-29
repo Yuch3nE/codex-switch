@@ -31,19 +31,7 @@ pub fn select_profile(output: ProfileListOutput) -> anyhow::Result<Option<Profil
     }
 
     let mut selector = ProfileSelectorState::new(output.profiles);
-    let mut stdout = io::stdout();
-    enable_raw_mode().context("failed to enable raw mode")?;
-    execute!(stdout, EnterAlternateScreen).context("failed to enter alternate screen")?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend).context("failed to create terminal backend")?;
-
-    let result = run_selector(&mut terminal, &mut selector);
-
-    disable_raw_mode().ok();
-    execute!(terminal.backend_mut(), LeaveAlternateScreen).ok();
-    terminal.show_cursor().ok();
-
-    result
+    with_tui(|terminal| run_selector(terminal, &mut selector))
 }
 
 pub fn select_profiles_to_delete(
@@ -58,13 +46,20 @@ pub fn select_profiles_to_delete(
     }
 
     let mut selector = DeleteSelectionState::new(output.profiles);
+    with_tui(|terminal| run_delete_selector(terminal, &mut selector))
+}
+
+fn with_tui<F, T>(f: F) -> anyhow::Result<T>
+where
+    F: FnOnce(&mut Terminal<CrosstermBackend<io::Stdout>>) -> anyhow::Result<T>,
+{
     let mut stdout = io::stdout();
     enable_raw_mode().context("failed to enable raw mode")?;
     execute!(stdout, EnterAlternateScreen).context("failed to enter alternate screen")?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("failed to create terminal backend")?;
 
-    let result = run_delete_selector(&mut terminal, &mut selector);
+    let result = f(&mut terminal);
 
     disable_raw_mode().ok();
     execute!(terminal.backend_mut(), LeaveAlternateScreen).ok();
@@ -391,9 +386,7 @@ impl DeleteSelectionState {
             return;
         };
 
-        if self.selected.contains(&profile.id) {
-            self.selected.remove(&profile.id);
-        } else {
+        if !self.selected.remove(&profile.id) {
             self.selected.insert(profile.id.clone());
         }
         self.message = None;

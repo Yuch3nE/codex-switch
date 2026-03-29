@@ -162,12 +162,7 @@ pub fn list_profiles(codex_home: &Path, switch_home: &Path) -> anyhow::Result<Pr
             continue;
         }
 
-        let metadata = read_profile_metadata(&path)?.unwrap_or(ProfileMetadata {
-            name: id.clone(),
-            primary: None,
-            secondary: None,
-            plan_type: None,
-        });
+        let metadata = read_profile_metadata(&path)?.unwrap_or_else(|| ProfileMetadata::with_name(id.clone()));
 
         let summary = auth::build_account_summary_from_path(&auth_path)
             .with_context(|| format!("failed to read profile {id}"))?;
@@ -279,15 +274,7 @@ fn import_profile_from_path(
 
     fs::create_dir_all(&profile_dir)?;
     auth::write_auth_file(&profile_dir.join("auth.json"), &auth_file)?;
-    write_profile_metadata(
-        &profile_dir,
-        &ProfileMetadata {
-            name: display_name,
-            primary: None,
-            secondary: None,
-            plan_type: None,
-        },
-    )
+    write_profile_metadata(&profile_dir, &ProfileMetadata::with_name(display_name))
 }
 
 fn load_import_auth_file(path: &Path, format: ImportFormat) -> anyhow::Result<auth::AuthFile> {
@@ -463,12 +450,7 @@ fn resolve_profile(switch_home: &Path, selector: &str) -> anyhow::Result<Resolve
     let root = profiles_root(switch_home);
     let direct_path = root.join(selector);
     if direct_path.join("auth.json").exists() {
-        let metadata = read_profile_metadata(&direct_path)?.unwrap_or(ProfileMetadata {
-            name: selector.to_string(),
-            primary: None,
-            secondary: None,
-            plan_type: None,
-        });
+        let metadata = read_profile_metadata(&direct_path)?.unwrap_or_else(|| ProfileMetadata::with_name(selector));
         return Ok(ResolvedProfile {
             id: selector.to_string(),
             name: metadata.name,
@@ -492,12 +474,7 @@ fn resolve_profile(switch_home: &Path, selector: &str) -> anyhow::Result<Resolve
                 continue;
             }
 
-            let metadata = read_profile_metadata(&path)?.unwrap_or(ProfileMetadata {
-                name: id.to_string(),
-                primary: None,
-                secondary: None,
-                plan_type: None,
-            });
+            let metadata = read_profile_metadata(&path)?.unwrap_or_else(|| ProfileMetadata::with_name(id));
             if metadata.name == selector {
                 matches.push(ResolvedProfile {
                     id: id.to_string(),
@@ -551,6 +528,17 @@ struct ProfileMetadata {
     plan_type: Option<String>,
 }
 
+impl ProfileMetadata {
+    fn with_name(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            primary: None,
+            secondary: None,
+            plan_type: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct UsageLimitSnapshot {
     primary: Option<PrimaryRateLimit>,
@@ -578,15 +566,12 @@ fn refresh_active_profile_snapshot(codex_home: &Path, switch_home: &Path) -> any
         return Ok(());
     }
 
-    let mut metadata = read_profile_metadata(&profile_dir)?.unwrap_or(ProfileMetadata {
-        name: profile_dir
+    let mut metadata = read_profile_metadata(&profile_dir)?.unwrap_or_else(|| {
+        let name = profile_dir
             .file_name()
             .and_then(|value| value.to_str())
-            .unwrap_or("profile")
-            .to_string(),
-        primary: None,
-        secondary: None,
-        plan_type: None,
+            .unwrap_or("profile");
+        ProfileMetadata::with_name(name)
     });
     let usage = current_usage_snapshot(codex_home)?;
     metadata.primary = usage.primary;
@@ -613,16 +598,7 @@ mod tests {
         let profile_dir = root.join(id);
         fs::create_dir_all(&profile_dir).unwrap();
         fs::write(profile_dir.join("auth.json"), "{}").unwrap();
-        write_profile_metadata(
-            &profile_dir,
-            &ProfileMetadata {
-                name: name.to_string(),
-                primary: None,
-                secondary: None,
-                plan_type: None,
-            },
-        )
-        .unwrap();
+        write_profile_metadata(&profile_dir, &ProfileMetadata::with_name(name)).unwrap();
     }
 
     #[test]

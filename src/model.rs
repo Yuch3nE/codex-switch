@@ -292,7 +292,7 @@ fn render_table_rule_with_fill(
     let separator = middle.to_string();
     let segments = widths
         .iter()
-        .map(|width| fill.to_string().repeat(*width + 2))
+        .map(|width| std::iter::repeat(fill).take(*width + 2).collect::<String>())
         .collect::<Vec<_>>();
     colorize_border(&format!("{}{}{}", left, segments.join(&separator), right))
 }

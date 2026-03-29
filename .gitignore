@@ -1,6 +1,7 @@
 target/
 
 # Local Codex sandbox data
+.codex/
 .codex-auth-switch/
 
 # Conversation and skill runtime artifacts

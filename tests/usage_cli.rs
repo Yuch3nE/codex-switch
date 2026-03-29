@@ -53,7 +53,7 @@ fn usage_command_merges_account_and_usage_in_json() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "alpha"])
         .assert()
         .success();
@@ -73,13 +73,13 @@ fn usage_command_merges_account_and_usage_in_json() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "beta"])
         .assert()
         .success();
 
     let mut cmd = Command::cargo_bin("codex-switch").unwrap();
-    cmd.env("CODEX_HOME", &codex_dir)
+    cmd.env("HOME", temp.path())
         .arg("usage")
         .arg("--format")
         .arg("json");
@@ -115,7 +115,7 @@ fn usage_text_renders_single_account_quota_table() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "alpha"])
         .assert()
         .success();
@@ -135,7 +135,7 @@ fn usage_text_renders_single_account_quota_table() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "beta"])
         .assert()
         .success();
@@ -155,14 +155,14 @@ fn usage_text_renders_single_account_quota_table() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "gamma"])
         .assert()
         .success();
 
     let output = Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .arg("usage")
         .output()
         .unwrap();
@@ -194,7 +194,8 @@ fn usage_text_renders_single_account_quota_table() {
 fn usage_falls_back_to_active_profile_current_session_snapshot() {
     let temp = tempdir().unwrap();
     let codex_dir = temp.path().join(".codex");
-    let profile_dir = codex_dir.join("profiles/alpha");
+    let switch_dir = temp.path().join(".codex-auth-switch");
+    let profile_dir = switch_dir.join("profiles/alpha");
     let sessions_dir = codex_dir.join("sessions/2026/03/28");
 
     fs::create_dir_all(&profile_dir).unwrap();
@@ -206,7 +207,7 @@ fn usage_falls_back_to_active_profile_current_session_snapshot() {
     .unwrap();
     fs::write(profile_dir.join("profile.json"), "{\"name\":\"alpha\"}").unwrap();
     fs::write(
-        codex_dir.join("profiles/state.json"),
+        switch_dir.join("profiles/state.json"),
         "{\"active_profile\":\"alpha\"}",
     )
     .unwrap();
@@ -217,7 +218,7 @@ fn usage_falls_back_to_active_profile_current_session_snapshot() {
     .unwrap();
 
     let mut cmd = Command::cargo_bin("codex-switch").unwrap();
-    cmd.env("CODEX_HOME", &codex_dir).arg("usage");
+    cmd.env("HOME", temp.path()).arg("usage");
 
     cmd.assert()
         .success()
@@ -230,7 +231,8 @@ fn usage_falls_back_to_active_profile_current_session_snapshot() {
 fn usage_prefers_active_profile_realtime_snapshot_over_saved_snapshot() {
     let temp = tempdir().unwrap();
     let codex_dir = temp.path().join(".codex");
-    let profile_dir = codex_dir.join("profiles/alpha");
+    let switch_dir = temp.path().join(".codex-auth-switch");
+    let profile_dir = switch_dir.join("profiles/alpha");
     let sessions_dir = codex_dir.join("sessions/2026/03/28");
 
     fs::create_dir_all(&profile_dir).unwrap();
@@ -246,7 +248,7 @@ fn usage_prefers_active_profile_realtime_snapshot_over_saved_snapshot() {
     )
     .unwrap();
     fs::write(
-        codex_dir.join("profiles/state.json"),
+        switch_dir.join("profiles/state.json"),
         "{\"active_profile\":\"alpha\"}",
     )
     .unwrap();
@@ -257,7 +259,7 @@ fn usage_prefers_active_profile_realtime_snapshot_over_saved_snapshot() {
     .unwrap();
 
     let mut cmd = Command::cargo_bin("codex-switch").unwrap();
-    cmd.env("CODEX_HOME", &codex_dir).arg("usage");
+    cmd.env("HOME", temp.path()).arg("usage");
 
     cmd.assert()
         .success()

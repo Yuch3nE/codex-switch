@@ -48,16 +48,19 @@ cargo install --path .
 codex-switch --help
 ```
 
-如果你不想直接读取默认目录，可以通过 `CODEX_HOME` 指向自定义 Codex 数据目录：
+程序固定使用两个目录：
+
+- `~/.codex`：真实 Codex 的 `auth.json` 和 `sessions`
+- `~/.codex-auth-switch`：codex-switch 自己管理的 `profiles`、`state.json` 和 `rollback`
 
 ```bash
-CODEX_HOME=/path/to/.codex cargo run -- usage
+cargo run -- usage
 ```
 
-如果你想在仓库内构造一套测试数据，建议把它放在项目根目录下的 `.codex/`，该目录已经在 `.gitignore` 中默认忽略：
+如果你想在仓库内构造一套测试数据，可以直接把仓库根目录当作 `HOME`，程序会在里面使用 `.codex/` 和 `.codex-auth-switch/`：
 
 ```bash
-CODEX_HOME=$PWD/.codex cargo run -- usage
+HOME=$PWD cargo run -- usage
 ```
 
 ## 常用工作流
@@ -200,7 +203,7 @@ cargo test
 - `src/tui.rs`: `profile use` 的交互式全屏选择器
 - `src/main.rs`: CLI 命令分发入口
 
-测试位于 `tests/` 目录，均使用临时目录构造 `.codex` 数据，不依赖你机器上的真实账号环境。
+测试位于 `tests/` 目录，均使用临时目录同时构造 `.codex` 与 `.codex-auth-switch` 数据，不依赖你机器上的真实账号环境。
 
 ## 测试
 

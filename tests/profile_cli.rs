@@ -36,6 +36,7 @@ fn rollout_with_primary(used_percent: f64, window_minutes: u64, resets_at: u64) 
 fn profile_save_and_use_switches_auth_file() {
     let temp = tempdir().unwrap();
     let codex_dir = temp.path().join(".codex");
+    let switch_dir = temp.path().join(".codex-auth-switch");
     fs::create_dir_all(&codex_dir).unwrap();
 
     fs::write(
@@ -45,7 +46,7 @@ fn profile_save_and_use_switches_auth_file() {
     .unwrap();
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "alpha"])
         .assert()
         .success()
@@ -58,22 +59,23 @@ fn profile_save_and_use_switches_auth_file() {
     .unwrap();
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "beta"])
         .assert()
         .success();
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "use", "alpha"])
         .assert()
         .success()
         .stdout(contains("已切换到 profile: alpha"));
 
     let active_auth = fs::read_to_string(codex_dir.join("auth.json")).unwrap();
-    let rollback_auth = fs::read_to_string(codex_dir.join("profiles/.rollback/auth.json")).unwrap();
-    let state = fs::read_to_string(codex_dir.join("profiles/state.json")).unwrap();
+    let rollback_auth =
+        fs::read_to_string(switch_dir.join("profiles/.rollback/auth.json")).unwrap();
+    let state = fs::read_to_string(switch_dir.join("profiles/state.json")).unwrap();
 
     assert!(active_auth.contains("account-123"));
     assert!(rollback_auth.contains("account-456"));
@@ -93,7 +95,7 @@ fn profile_list_reports_saved_profiles_and_active_one() {
     .unwrap();
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "alpha"])
         .assert()
         .success();
@@ -105,21 +107,21 @@ fn profile_list_reports_saved_profiles_and_active_one() {
     .unwrap();
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "beta"])
         .assert()
         .success();
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "use", "beta"])
         .assert()
         .success();
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["--format", "json", "profile", "list"])
         .assert()
         .success()
@@ -144,14 +146,14 @@ fn profile_save_marks_current_auth_as_managed_active_profile() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "alpha"])
         .assert()
         .success();
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["--format", "json", "profile", "list"])
         .assert()
         .success()
@@ -173,7 +175,7 @@ fn profile_save_without_name_uses_email_prefix_and_allows_duplicate_names() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save"])
         .assert()
         .success()
@@ -181,7 +183,7 @@ fn profile_save_without_name_uses_email_prefix_and_allows_duplicate_names() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save"])
         .assert()
         .success()
@@ -189,7 +191,7 @@ fn profile_save_without_name_uses_email_prefix_and_allows_duplicate_names() {
 
     let output = Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["--format", "json", "profile", "list"])
         .output()
         .unwrap();
@@ -223,21 +225,21 @@ fn profile_use_rejects_ambiguous_duplicate_display_names() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save"])
         .assert()
         .success();
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save"])
         .assert()
         .success();
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "use", "tetel"])
         .assert()
         .failure()
@@ -245,7 +247,7 @@ fn profile_use_rejects_ambiguous_duplicate_display_names() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "use", "tetel-2"])
         .assert()
         .success()
@@ -256,6 +258,7 @@ fn profile_use_rejects_ambiguous_duplicate_display_names() {
 fn profile_use_refreshes_previous_active_profile_snapshot() {
     let temp = tempdir().unwrap();
     let codex_dir = temp.path().join(".codex");
+    let switch_dir = temp.path().join(".codex-auth-switch");
     let sessions_dir = codex_dir.join("sessions/2026/03/28");
     fs::create_dir_all(&sessions_dir).unwrap();
 
@@ -271,7 +274,7 @@ fn profile_use_refreshes_previous_active_profile_snapshot() {
     .unwrap();
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "alpha"])
         .assert()
         .success();
@@ -290,7 +293,7 @@ fn profile_use_refreshes_previous_active_profile_snapshot() {
     .unwrap();
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "beta"])
         .assert()
         .success();
@@ -305,12 +308,12 @@ fn profile_use_refreshes_previous_active_profile_snapshot() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "use", "alpha"])
         .assert()
         .success();
 
-    let beta_profile = fs::read_to_string(codex_dir.join("profiles/beta/profile.json")).unwrap();
+    let beta_profile = fs::read_to_string(switch_dir.join("profiles/beta/profile.json")).unwrap();
     let value: Value = serde_json::from_str(&beta_profile).unwrap();
 
     assert_eq!(
@@ -337,7 +340,7 @@ fn profile_imports_single_auth_file_without_changing_active_profile() {
     .unwrap();
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "save", "alpha"])
         .assert()
         .success();
@@ -347,7 +350,7 @@ fn profile_imports_single_auth_file_without_changing_active_profile() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "import", import_file.to_str().unwrap()])
         .assert()
         .success()
@@ -355,7 +358,7 @@ fn profile_imports_single_auth_file_without_changing_active_profile() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["--format", "json", "profile", "list"])
         .assert()
         .success()
@@ -381,7 +384,7 @@ fn profile_import_recursively_scans_directory_for_auth_files() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["profile", "import", import_dir.to_str().unwrap()])
         .assert()
         .success()
@@ -389,7 +392,7 @@ fn profile_import_recursively_scans_directory_for_auth_files() {
 
     Command::cargo_bin("codex-switch")
         .unwrap()
-        .env("CODEX_HOME", &codex_dir)
+        .env("HOME", temp.path())
         .args(["--format", "json", "profile", "list"])
         .assert()
         .success()

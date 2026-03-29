@@ -12,7 +12,11 @@ use crate::{
     sessions,
 };
 
-pub fn save_profile(codex_home: &Path, name: Option<&str>) -> anyhow::Result<String> {
+pub fn save_profile(
+    codex_home: &Path,
+    switch_home: &Path,
+    name: Option<&str>,
+) -> anyhow::Result<String> {
     let current_auth = codex_home.join("auth.json");
     if !current_auth.exists() {
         bail!("当前 auth.json 不存在");
@@ -20,9 +24,9 @@ pub fn save_profile(codex_home: &Path, name: Option<&str>) -> anyhow::Result<Str
 
     let summary = auth::build_account_summary_from_path(&current_auth)?;
     let display_name = resolve_display_name(name, summary.email.as_deref())?;
-    let profile_id = generate_profile_id(codex_home, &display_name)?;
+    let profile_id = generate_profile_id(switch_home, &display_name)?;
 
-    let profile_dir = profiles_root(codex_home).join(&profile_id);
+    let profile_dir = profiles_root(switch_home).join(&profile_id);
     fs::create_dir_all(&profile_dir)?;
     fs::copy(&current_auth, profile_dir.join("auth.json"))?;
     let primary = current_primary_snapshot(codex_home)?;
@@ -34,7 +38,7 @@ pub fn save_profile(codex_home: &Path, name: Option<&str>) -> anyhow::Result<Str
         },
     )?;
     write_state(
-        codex_home,
+        switch_home,
         &ProfilesState {
             active_profile: Some(profile_id.clone()),
         },
@@ -46,8 +50,12 @@ pub fn save_profile(codex_home: &Path, name: Option<&str>) -> anyhow::Result<Str
     ))
 }
 
-pub fn import_profiles(codex_home: &Path, path: &Path) -> anyhow::Result<String> {
-    let state = read_state(codex_home)?;
+pub fn import_profiles(
+    _codex_home: &Path,
+    switch_home: &Path,
+    path: &Path,
+) -> anyhow::Result<String> {
+    let state = read_state(switch_home)?;
     let mut files = Vec::new();
 
     if path.is_file() {
@@ -63,22 +71,22 @@ pub fn import_profiles(codex_home: &Path, path: &Path) -> anyhow::Result<String>
     }
 
     for file in &files {
-        import_profile_from_path(codex_home, file)?;
+        import_profile_from_path(switch_home, file)?;
     }
 
-    write_state(codex_home, &state)?;
+    write_state(switch_home, &state)?;
 
     Ok(format!("已导入 {} 个 profile", files.len()))
 }
 
-pub fn use_profile(codex_home: &Path, name: &str) -> anyhow::Result<String> {
-    refresh_active_profile_snapshot(codex_home)?;
+pub fn use_profile(codex_home: &Path, switch_home: &Path, name: &str) -> anyhow::Result<String> {
+    refresh_active_profile_snapshot(codex_home, switch_home)?;
 
-    let resolved = resolve_profile(codex_home, name)?;
+    let resolved = resolve_profile(switch_home, name)?;
     let profile_auth = resolved.path.join("auth.json");
 
     let current_auth = codex_home.join("auth.json");
-    let rollback_dir = profiles_root(codex_home).join(".rollback");
+    let rollback_dir = profiles_root(switch_home).join(".rollback");
     fs::create_dir_all(&rollback_dir)?;
 
     if current_auth.exists() {
@@ -87,7 +95,7 @@ pub fn use_profile(codex_home: &Path, name: &str) -> anyhow::Result<String> {
 
     fs::copy(&profile_auth, &current_auth)?;
     write_state(
-        codex_home,
+        switch_home,
         &ProfilesState {
             active_profile: Some(resolved.id.clone()),
         },
@@ -99,10 +107,10 @@ pub fn use_profile(codex_home: &Path, name: &str) -> anyhow::Result<String> {
     ))
 }
 
-pub fn list_profiles(codex_home: &Path) -> anyhow::Result<ProfileListOutput> {
-    let root = profiles_root(codex_home);
+pub fn list_profiles(codex_home: &Path, switch_home: &Path) -> anyhow::Result<ProfileListOutput> {
+    let root = profiles_root(switch_home);
     fs::create_dir_all(&root)?;
-    let state = read_state(codex_home)?;
+    let state = read_state(switch_home)?;
     let active_primary = current_primary_snapshot(codex_home)?;
     let mut profiles = Vec::new();
 
@@ -179,11 +187,11 @@ fn collect_auth_files(dir: &Path, files: &mut Vec<PathBuf>) -> anyhow::Result<()
     Ok(())
 }
 
-fn import_profile_from_path(codex_home: &Path, path: &Path) -> anyhow::Result<()> {
+fn import_profile_from_path(switch_home: &Path, path: &Path) -> anyhow::Result<()> {
     let summary = auth::build_account_summary_from_path(path)?;
     let display_name = resolve_display_name(None, summary.email.as_deref())?;
-    let profile_id = generate_profile_id(codex_home, &display_name)?;
-    let profile_dir = profiles_root(codex_home).join(profile_id);
+    let profile_id = generate_profile_id(switch_home, &display_name)?;
+    let profile_dir = profiles_root(switch_home).join(profile_id);
 
     fs::create_dir_all(&profile_dir)?;
     fs::copy(path, profile_dir.join("auth.json"))?;
@@ -196,8 +204,8 @@ fn import_profile_from_path(codex_home: &Path, path: &Path) -> anyhow::Result<()
     )
 }
 
-fn state_path(codex_home: &Path) -> PathBuf {
-    profiles_root(codex_home).join("state.json")
+fn state_path(switch_home: &Path) -> PathBuf {
+    profiles_root(switch_home).join("state.json")
 }
 
 fn validate_profile_name(name: &str) -> anyhow::Result<()> {
@@ -226,8 +234,8 @@ fn resolve_display_name(name: Option<&str>, email: Option<&str>) -> anyhow::Resu
     Ok(candidate)
 }
 
-fn generate_profile_id(codex_home: &Path, display_name: &str) -> anyhow::Result<String> {
-    let root = profiles_root(codex_home);
+fn generate_profile_id(switch_home: &Path, display_name: &str) -> anyhow::Result<String> {
+    let root = profiles_root(switch_home);
     fs::create_dir_all(&root)?;
 
     let base = slugify_profile_id(display_name);
@@ -282,8 +290,8 @@ fn write_profile_metadata(profile_dir: &Path, metadata: &ProfileMetadata) -> any
     Ok(())
 }
 
-fn resolve_profile(codex_home: &Path, selector: &str) -> anyhow::Result<ResolvedProfile> {
-    let root = profiles_root(codex_home);
+fn resolve_profile(switch_home: &Path, selector: &str) -> anyhow::Result<ResolvedProfile> {
+    let root = profiles_root(switch_home);
     let mut matches = Vec::new();
     if root.exists() {
         for entry in fs::read_dir(&root)? {
@@ -338,8 +346,8 @@ fn resolve_profile(codex_home: &Path, selector: &str) -> anyhow::Result<Resolved
     bail!("profile 不存在: {selector}")
 }
 
-fn read_state(codex_home: &Path) -> anyhow::Result<ProfilesState> {
-    let path = state_path(codex_home);
+fn read_state(switch_home: &Path) -> anyhow::Result<ProfilesState> {
+    let path = state_path(switch_home);
     if !path.exists() {
         return Ok(ProfilesState::default());
     }
@@ -347,10 +355,10 @@ fn read_state(codex_home: &Path) -> anyhow::Result<ProfilesState> {
     Ok(serde_json::from_slice(&fs::read(path)?)?)
 }
 
-fn write_state(codex_home: &Path, state: &ProfilesState) -> anyhow::Result<()> {
-    let root = profiles_root(codex_home);
+fn write_state(switch_home: &Path, state: &ProfilesState) -> anyhow::Result<()> {
+    let root = profiles_root(switch_home);
     fs::create_dir_all(&root)?;
-    fs::write(state_path(codex_home), serde_json::to_vec_pretty(state)?)?;
+    fs::write(state_path(switch_home), serde_json::to_vec_pretty(state)?)?;
     Ok(())
 }
 
@@ -370,13 +378,13 @@ fn current_primary_snapshot(codex_home: &Path) -> anyhow::Result<Option<PrimaryR
     Ok(sessions::collect_usage(codex_home)?.primary)
 }
 
-fn refresh_active_profile_snapshot(codex_home: &Path) -> anyhow::Result<()> {
-    let state = read_state(codex_home)?;
+fn refresh_active_profile_snapshot(codex_home: &Path, switch_home: &Path) -> anyhow::Result<()> {
+    let state = read_state(switch_home)?;
     let Some(active_profile) = state.active_profile else {
         return Ok(());
     };
 
-    let profile_dir = profiles_root(codex_home).join(active_profile);
+    let profile_dir = profiles_root(switch_home).join(active_profile);
     if !profile_dir.join("auth.json").exists() {
         return Ok(());
     }

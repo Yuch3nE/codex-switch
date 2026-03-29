@@ -16,7 +16,7 @@ fn account_command_reads_email_and_plan_from_auth_file() {
     .unwrap();
 
     let mut cmd = Command::cargo_bin("codex-switch").unwrap();
-    cmd.env("CODEX_HOME", &codex_dir)
+    cmd.env("HOME", temp.path())
         .arg("account")
         .arg("--format")
         .arg("json");

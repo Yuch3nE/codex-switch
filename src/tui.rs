@@ -780,11 +780,11 @@ impl ProfileSelectorState {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// 用 TUI 表单方式编辑一组配置字段。
-/// fields: `(标签, 初始值, 是否敏感)`
-/// 返回 Some(values) 表示用户保存；None 表示取消。
+/// fields: `(标签, 初始值, 是否敏感, 提示文本)`
+/// 提示文本可用 `\n` 换行。返回 Some(values) 表示用户保存；None 表示取消。
 pub fn edit_config_fields(
     title: &'static str,
-    fields: Vec<(&'static str, String, bool)>,
+    fields: Vec<(&'static str, String, bool, &'static str)>,
 ) -> anyhow::Result<Option<Vec<String>>> {
     if !io::stdout().is_terminal() {
         anyhow::bail!("交互式 TUI 需要在真实终端中运行");
@@ -834,6 +834,14 @@ fn run_config_editor(
         if state.edit_buf.is_some() {
             match key.code {
                 KeyCode::Enter => state.confirm_edit(),
+                // Tab: 确认当前字段并自动跳到下一个字段开始编辑
+                KeyCode::Tab => {
+                    state.confirm_edit();
+                    if state.selected + 1 < state.labels.len() {
+                        state.selected += 1;
+                        state.start_edit();
+                    }
+                }
                 KeyCode::Esc => state.cancel_edit(),
                 KeyCode::Backspace => {
                     if let Some(buf) = &mut state.edit_buf {
@@ -853,11 +861,13 @@ fn run_config_editor(
                     if state.selected > 0 {
                         state.selected -= 1;
                     }
+                    state.message = None;
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     if state.selected + 1 < state.labels.len() {
                         state.selected += 1;
                     }
+                    state.message = None;
                 }
                 KeyCode::Enter => state.start_edit(),
                 KeyCode::Char('s') => {
@@ -878,37 +888,45 @@ fn draw_config_editor(frame: &mut ratatui::Frame<'_>, state: &ConfigEditorState)
     let area = frame.area();
     frame.render_widget(Clear, area);
 
-    let layout = Layout::default()
+    let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
             Constraint::Min(6),
             Constraint::Length(3),
-            Constraint::Length(3),
         ])
         .split(area);
 
-    let header_text = if state.edit_buf.is_some() {
-        "编辑模式: Enter 确认  Esc 取消"
+    // ── Header ────────────────────────────────────────────────────────────────
+    let mode_hint = if state.edit_buf.is_some() {
+        "编辑模式: Enter 确认  Tab 确认并跳到下一项  Esc 放弃"
     } else {
-        "↑/↓ j/k 移动  Enter 编辑字段  s 保存  q/Esc 取消"
+        "↑/↓ j/k 切换字段  Enter 编辑  s 保存  q/Esc 取消"
     };
     let header = Paragraph::new(vec![
         Line::from(vec![
             Span::styled(
                 "Codex Switch",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
             ),
-            Span::raw("  "),
-            Span::styled(state.title, Style::default().fg(Color::Gray)),
+            Span::styled("  ──  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                state.title,
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            ),
         ]),
-        Line::from(header_text),
+        Line::from(vec![Span::styled(mode_hint, Style::default().fg(Color::DarkGray))]),
     ])
-    .block(Block::default().borders(Borders::ALL).title("TUI"));
-    frame.render_widget(header, layout[0]);
+    .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(header, outer[0]);
 
+    // ── Body: 左侧字段列表 + 右侧详情/编辑 ────────────────────────────────────
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(44), Constraint::Percentage(56)])
+        .split(outer[1]);
+
+    // Left: field list with label + short value
     let max_label_len = state.labels.iter().map(|l| l.chars().count()).max().unwrap_or(0);
     let mut list_state = ListState::default().with_selected(Some(state.selected));
     let items: Vec<ListItem<'_>> = state
@@ -917,65 +935,100 @@ fn draw_config_editor(frame: &mut ratatui::Frame<'_>, state: &ConfigEditorState)
         .enumerate()
         .map(|(i, label)| {
             let pad = max_label_len - label.chars().count();
-            let display = state.display_value(i);
+            let (display, val_style) = state.list_display(i);
             ListItem::new(Line::from(vec![
                 Span::styled(
                     format!("{}{}", label, " ".repeat(pad + 2)),
                     Style::default().fg(Color::Yellow),
                 ),
-                Span::raw(display),
+                Span::styled(display, val_style),
             ]))
         })
         .collect();
 
+    let list_title = format!("Fields ({}/{})", state.selected + 1, state.labels.len());
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Config"))
+        .block(Block::default().borders(Borders::ALL).title(list_title))
         .highlight_style(
             Style::default()
-                .bg(Color::Blue)
+                .bg(Color::DarkGray)
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
-    frame.render_stateful_widget(list, layout[1], &mut list_state);
+    frame.render_stateful_widget(list, body[0], &mut list_state);
 
-    let (edit_content, edit_style) = match &state.edit_buf {
-        Some(buf) => {
-            let label = state.labels[state.selected];
-            let masked = if state.sensitive[state.selected] {
-                "*".repeat(buf.len())
-            } else {
-                buf.clone()
-            };
-            (
-                format!("{}: {}_", label, masked),
-                Style::default().fg(Color::Green),
-            )
-        }
-        None => (
-            "(Enter 开始编辑当前字段)".to_string(),
+    // Right: field detail + edit area
+    let label = state.labels[state.selected];
+    let hint = state.hints.get(state.selected).copied().unwrap_or("");
+
+    let mut right_lines: Vec<Line<'_>> = vec![
+        Line::from(vec![
+            Span::styled("字段  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                label,
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+    ];
+
+    for hint_line in hint.split('\n') {
+        right_lines.push(Line::from(vec![Span::styled(
+            hint_line,
+            Style::default().fg(Color::Gray),
+        )]));
+    }
+
+    right_lines.push(Line::from(""));
+
+    if let Some(buf) = &state.edit_buf {
+        let masked = if state.sensitive[state.selected] {
+            "●".repeat(buf.len())
+        } else {
+            buf.clone()
+        };
+        right_lines.push(Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::Green)),
+            Span::styled(
+                format!("{}▌", masked),
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        right_lines.push(Line::from(""));
+        right_lines.push(Line::from(vec![Span::styled(
+            "Enter 确认  Tab 确认并下一项  Esc 放弃",
             Style::default().fg(Color::DarkGray),
-        ),
-    };
-    let edit_bar = Paragraph::new(vec![Line::from(vec![
-        Span::styled("> ", edit_style),
-        Span::styled(edit_content, edit_style),
-    ])])
-    .block(Block::default().borders(Borders::ALL).title("Input"));
-    frame.render_widget(edit_bar, layout[2]);
-
-    let footer_text = state.message.as_deref().unwrap_or("s 保存  q/Esc 取消");
-    let footer_style = if state.message.is_some() {
-        Style::default().fg(Color::Red)
+        )]));
     } else {
-        Style::default()
+        right_lines.push(Line::from(vec![
+            Span::styled("当前值  ", Style::default().fg(Color::DarkGray)),
+            state.detail_value_span(state.selected),
+        ]));
+        right_lines.push(Line::from(""));
+        right_lines.push(Line::from(vec![Span::styled(
+            "Enter 开始编辑",
+            Style::default().fg(Color::DarkGray),
+        )]));
+    }
+
+    let detail_title = if state.edit_buf.is_some() { "Edit" } else { "Detail" };
+    let detail = Paragraph::new(right_lines)
+        .wrap(Wrap { trim: false })
+        .block(Block::default().borders(Borders::ALL).title(detail_title));
+    frame.render_widget(detail, body[1]);
+
+    // ── Footer ────────────────────────────────────────────────────────────────
+    let (footer_text, footer_style) = match &state.message {
+        Some(msg) => (
+            msg.as_str(),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+        None => ("s 保存  q/Esc 取消", Style::default().fg(Color::DarkGray)),
     };
-    let footer = Paragraph::new(vec![Line::from(vec![Span::styled(
-        footer_text,
-        footer_style,
-    )])])
-    .block(Block::default().borders(Borders::ALL).title("Keys"));
-    frame.render_widget(footer, layout[3]);
+    let footer = Paragraph::new(Line::from(vec![Span::styled(footer_text, footer_style)]))
+        .block(Block::default().borders(Borders::ALL).title("Status"));
+    frame.render_widget(footer, outer[2]);
 
     frame.set_cursor_position((0, 0));
 }
@@ -1143,6 +1196,7 @@ fn draw_password_input(frame: &mut ratatui::Frame<'_>, state: &PasswordInputStat
 struct ConfigEditorState {
     title: &'static str,
     labels: Vec<&'static str>,
+    hints: Vec<&'static str>,
     values: Vec<String>,
     sensitive: Vec<bool>,
     selected: usize,
@@ -1151,18 +1205,21 @@ struct ConfigEditorState {
 }
 
 impl ConfigEditorState {
-    fn new(title: &'static str, fields: Vec<(&'static str, String, bool)>) -> Self {
+    fn new(title: &'static str, fields: Vec<(&'static str, String, bool, &'static str)>) -> Self {
         let mut labels = Vec::with_capacity(fields.len());
+        let mut hints = Vec::with_capacity(fields.len());
         let mut values = Vec::with_capacity(fields.len());
         let mut sensitive = Vec::with_capacity(fields.len());
-        for (label, value, is_sensitive) in fields {
+        for (label, value, is_sensitive, hint) in fields {
             labels.push(label);
+            hints.push(hint);
             values.push(value);
             sensitive.push(is_sensitive);
         }
         Self {
             title,
             labels,
+            hints,
             values,
             sensitive,
             selected: 0,
@@ -1187,13 +1244,40 @@ impl ConfigEditorState {
         self.edit_buf = None;
     }
 
-    fn display_value(&self, i: usize) -> String {
+    /// 左侧列表中的简短显示（敏感字段用 ●，长值截断）
+    fn list_display(&self, i: usize) -> (String, Style) {
         if self.values[i].is_empty() {
-            "(空)".to_string()
-        } else if self.sensitive[i] {
-            "*".repeat(self.values[i].len().min(8))
+            return (
+                "(空)".to_string(),
+                Style::default().fg(Color::DarkGray),
+            );
+        }
+        if self.sensitive[i] {
+            return (
+                "●●●●".to_string(),
+                Style::default().fg(Color::DarkGray),
+            );
+        }
+        let v = &self.values[i];
+        let display = if v.chars().count() > 15 {
+            format!("{}…", &v[..v.char_indices().nth(14).map(|(i, _)| i).unwrap_or(v.len())])
         } else {
-            self.values[i].clone()
+            v.clone()
+        };
+        (display, Style::default().fg(Color::White))
+    }
+
+    /// 右侧详情面板的完整值 span（敏感字段仍掩码，但显示实际字符数）
+    fn detail_value_span(&self, i: usize) -> Span<'static> {
+        if self.values[i].is_empty() {
+            Span::styled("(空)", Style::default().fg(Color::DarkGray))
+        } else if self.sensitive[i] {
+            Span::styled(
+                "●".repeat(self.values[i].len()),
+                Style::default().fg(Color::DarkGray),
+            )
+        } else {
+            Span::styled(self.values[i].clone(), Style::default().fg(Color::White))
         }
     }
 }

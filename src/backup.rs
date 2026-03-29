@@ -460,17 +460,43 @@ fn default_config() -> BackupConfig {
     }
 }
 
-fn config_fields(config: &BackupConfig) -> Vec<(&'static str, String, bool)> {
+fn config_fields(config: &BackupConfig) -> Vec<(&'static str, String, bool, &'static str)> {
     vec![
-        ("WebDAV URL", config.webdav_url.clone(), false),
-        ("用户名", config.webdav_user.clone(), false),
-        ("密码", config.webdav_password.clone(), true),
-        ("远端目录", config.remote_dir.clone(), false),
-        ("最多备份数", config.max_backups.to_string(), false),
+        (
+            "WebDAV URL",
+            config.webdav_url.clone(),
+            false,
+            "WebDAV 服务器地址，需以 / 结尾\n例: https://your-server/dav/",
+        ),
+        (
+            "用户名",
+            config.webdav_user.clone(),
+            false,
+            "WebDAV 登录用户名",
+        ),
+        (
+            "密码",
+            config.webdav_password.clone(),
+            true,
+            "WebDAV 登录密码（输入时以 ● 掩码显示）",
+        ),
+        (
+            "远端目录",
+            config.remote_dir.clone(),
+            false,
+            "服务器端备份存放目录，需以 / 结尾\n默认: codex-switch-backups/",
+        ),
+        (
+            "最多备份数",
+            config.max_backups.to_string(),
+            false,
+            "服务器保留的最大备份数量\n0 = 不限制，默认 10",
+        ),
         (
             "加密口令",
             config.encryption_password.clone().unwrap_or_default(),
             true,
+            "AES-256-GCM 加密备份口令（以 ● 掩码显示）\n留空 = 明文 .zip\n填写后生成 .zip.enc",
         ),
     ]
 }

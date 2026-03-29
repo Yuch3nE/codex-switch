@@ -1,7 +1,6 @@
 use std::{
     collections::HashSet,
     fs,
-    io::{self, BufRead, Write},
     path::{Path, PathBuf},
 };
 
@@ -44,59 +43,6 @@ impl BackupConfig {
         let path = Self::config_path(switch_home);
         fs::write(path, serde_json::to_vec_pretty(self)?)?;
         Ok(())
-    }
-
-    pub fn load_or_prompt(switch_home: &Path) -> anyhow::Result<Self> {
-        if let Some(config) = Self::load(switch_home)? {
-            return Ok(config);
-        }
-        let config = Self::prompt()?;
-        config.save(switch_home)?;
-        Ok(config)
-    }
-
-    fn prompt() -> anyhow::Result<Self> {
-        macro_rules! ask {
-            ($prompt:expr) => {{
-                print!("{}: ", $prompt);
-                io::stdout().flush()?;
-                let mut line = String::new();
-                io::stdin().lock().read_line(&mut line)?;
-                line.trim().to_string()
-            }};
-        }
-
-        let webdav_url = ask!("WebDAV URL (如 https://your-server/dav/)");
-        if webdav_url.is_empty() {
-            bail!("WebDAV URL 不能为空");
-        }
-        let webdav_user = ask!("WebDAV 用户名");
-        let webdav_password = ask!("WebDAV 密码");
-        let remote_dir_raw = ask!("远端备份目录名 (默认: codex-switch-backups/)");
-        let remote_dir = if remote_dir_raw.is_empty() {
-            "codex-switch-backups/".to_string()
-        } else if remote_dir_raw.ends_with('/') {
-            remote_dir_raw
-        } else {
-            format!("{}/", remote_dir_raw)
-        };
-        let max_str = ask!("最多保留备份数量 (0=不限制, 默认: 10)");
-        let max_backups: u32 = if max_str.is_empty() {
-            10
-        } else {
-            max_str.parse().context("请输入有效的数字")?
-        };
-        let enc = ask!("加密口令 (留空则不加密)");
-        let encryption_password = if enc.is_empty() { None } else { Some(enc) };
-
-        Ok(Self {
-            webdav_url,
-            webdav_user,
-            webdav_password,
-            remote_dir,
-            max_backups,
-            encryption_password,
-        })
     }
 }
 
@@ -503,8 +449,66 @@ fn backup_filename(encrypted: bool) -> String {
     format!("codex-switch-{}.{}", now.format("%Y%m%d-%H%M%S"), ext)
 }
 
+fn default_config() -> BackupConfig {
+    BackupConfig {
+        webdav_url: String::new(),
+        webdav_user: String::new(),
+        webdav_password: String::new(),
+        remote_dir: "codex-switch-backups/".to_string(),
+        max_backups: 10,
+        encryption_password: None,
+    }
+}
+
+fn config_fields(config: &BackupConfig) -> Vec<(&'static str, String, bool)> {
+    vec![
+        ("WebDAV URL", config.webdav_url.clone(), false),
+        ("用户名", config.webdav_user.clone(), false),
+        ("密码", config.webdav_password.clone(), true),
+        ("远端目录", config.remote_dir.clone(), false),
+        ("最多备份数", config.max_backups.to_string(), false),
+        (
+            "加密口令",
+            config.encryption_password.clone().unwrap_or_default(),
+            true,
+        ),
+    ]
+}
+
+fn config_from_values(values: Vec<String>) -> anyhow::Result<BackupConfig> {
+    let max_backups: u32 = values[4].trim().parse().unwrap_or(10);
+    let enc_password = if values[5].trim().is_empty() {
+        None
+    } else {
+        Some(values[5].clone())
+    };
+    let raw_dir = values[3].clone();
+    let remote_dir = if raw_dir.trim().is_empty() {
+        "codex-switch-backups/".to_string()
+    } else if raw_dir.ends_with('/') {
+        raw_dir
+    } else {
+        format!("{}/", raw_dir)
+    };
+    Ok(BackupConfig {
+        webdav_url: values[0].trim().to_string(),
+        webdav_user: values[1].trim().to_string(),
+        webdav_password: values[2].clone(),
+        remote_dir,
+        max_backups,
+        encryption_password: enc_password,
+    })
+}
+
 pub fn run_backup(switch_home: &Path) -> anyhow::Result<String> {
-    let config = BackupConfig::load_or_prompt(switch_home)?;
+    let existing = BackupConfig::load(switch_home)?.unwrap_or_else(default_config);
+    let fields = config_fields(&existing);
+    let Some(values) = crate::tui::edit_config_fields("Backup Config", fields)? else {
+        return Ok("已取消备份".to_string());
+    };
+
+    let config = config_from_values(values)?;
+    config.save(switch_home)?;
 
     let profiles_dir = switch_home.join("profiles");
     if !profiles_dir.exists() {
@@ -540,7 +544,14 @@ pub fn run_backup(switch_home: &Path) -> anyhow::Result<String> {
 }
 
 pub fn run_restore(switch_home: &Path) -> anyhow::Result<String> {
-    let mut config = BackupConfig::load_or_prompt(switch_home)?;
+    let existing = BackupConfig::load(switch_home)?.unwrap_or_else(default_config);
+    let fields = config_fields(&existing);
+    let Some(values) = crate::tui::edit_config_fields("Restore Config", fields)? else {
+        return Ok("已取消恢复".to_string());
+    };
+
+    let config = config_from_values(values)?;
+    config.save(switch_home)?;
 
     let mut files = webdav_list_backups(&config)?;
     if files.is_empty() {
@@ -548,43 +559,20 @@ pub fn run_restore(switch_home: &Path) -> anyhow::Result<String> {
     }
     files.sort_by(|a, b| b.cmp(a));
 
-    println!("可用备份列表：");
-    for (i, f) in files.iter().enumerate() {
-        let mark = if i == 0 { " (最新)" } else { "" };
-        println!("  {}. {}{}", i + 1, f, mark);
-    }
-    print!("请输入编号 (1-{}): ", files.len());
-    io::stdout().flush()?;
-
-    let mut line = String::new();
-    io::stdin().lock().read_line(&mut line)?;
-    let choice: usize = line.trim().parse().context("请输入有效的数字")?;
-    if choice < 1 || choice > files.len() {
-        bail!("编号超出范围");
-    }
-    let selected_file = files[choice - 1].clone();
+    let Some(selected_file) = crate::tui::select_backup_file(files)? else {
+        return Ok("已取消恢复".to_string());
+    };
 
     let raw = webdav_get(&config, &selected_file)?;
 
     let zip_bytes = if selected_file.ends_with(".enc") {
-        let password = match config.encryption_password.clone() {
-            Some(p) => p,
-            None => {
-                print!("请输入解密口令: ");
-                io::stdout().flush()?;
-                let mut pw = String::new();
-                io::stdin().lock().read_line(&mut pw)?;
-                let pw = pw.trim().to_string();
-                print!("是否将口令保存到配置文件？(y/N): ");
-                io::stdout().flush()?;
-                let mut yn = String::new();
-                io::stdin().lock().read_line(&mut yn)?;
-                if yn.trim().eq_ignore_ascii_case("y") {
-                    config.encryption_password = Some(pw.clone());
-                    config.save(switch_home)?;
-                }
-                pw
-            }
+        let password = if let Some(p) = config.encryption_password.clone() {
+            p
+        } else {
+            let Some(pw) = crate::tui::input_password("请输入解密口令")? else {
+                return Ok("已取消恢复".to_string());
+            };
+            pw
         };
         decrypt(&raw, &password)?
     } else {

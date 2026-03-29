@@ -775,6 +775,467 @@ impl ProfileSelectorState {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// edit_config_fields: 通用 TUI 配置编辑表单
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 用 TUI 表单方式编辑一组配置字段。
+/// fields: `(标签, 初始值, 是否敏感)`
+/// 返回 Some(values) 表示用户保存；None 表示取消。
+pub fn edit_config_fields(
+    title: &'static str,
+    fields: Vec<(&'static str, String, bool)>,
+) -> anyhow::Result<Option<Vec<String>>> {
+    if !io::stdout().is_terminal() {
+        anyhow::bail!("交互式 TUI 需要在真实终端中运行");
+    }
+    let mut state = ConfigEditorState::new(title, fields);
+    with_tui(|terminal| run_config_editor(terminal, &mut state))
+}
+
+/// 让用户从备份文件列表中选一个。返回 None 表示取消。
+pub fn select_backup_file(files: Vec<String>) -> anyhow::Result<Option<String>> {
+    if files.is_empty() {
+        return Ok(None);
+    }
+    if !io::stdout().is_terminal() {
+        anyhow::bail!("交互式 TUI 需要在真实终端中运行");
+    }
+    let mut state = BackupFileState::new(files);
+    with_tui(|terminal| run_file_selector(terminal, &mut state))
+}
+
+/// 用 TUI 单行输入框输入口令（输入内容用 `*` 掩码）。返回 None 表示取消。
+pub fn input_password(prompt: &'static str) -> anyhow::Result<Option<String>> {
+    if !io::stdout().is_terminal() {
+        anyhow::bail!("交互式 TUI 需要在真实终端中运行");
+    }
+    let mut state = PasswordInputState::new(prompt);
+    with_tui(|terminal| run_password_input(terminal, &mut state))
+}
+
+fn run_config_editor(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    state: &mut ConfigEditorState,
+) -> anyhow::Result<Option<Vec<String>>> {
+    loop {
+        terminal.draw(|frame| draw_config_editor(frame, state))?;
+
+        if !event::poll(Duration::from_millis(250))? {
+            continue;
+        }
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+
+        if state.edit_buf.is_some() {
+            match key.code {
+                KeyCode::Enter => state.confirm_edit(),
+                KeyCode::Esc => state.cancel_edit(),
+                KeyCode::Backspace => {
+                    if let Some(buf) = &mut state.edit_buf {
+                        buf.pop();
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let Some(buf) = &mut state.edit_buf {
+                        buf.push(c);
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if state.selected > 0 {
+                        state.selected -= 1;
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if state.selected + 1 < state.labels.len() {
+                        state.selected += 1;
+                    }
+                }
+                KeyCode::Enter => state.start_edit(),
+                KeyCode::Char('s') => {
+                    if state.values[0].trim().is_empty() {
+                        state.message = Some("第一个字段（WebDAV URL）不能为空".to_string());
+                        continue;
+                    }
+                    return Ok(Some(state.values.clone()));
+                }
+                KeyCode::Esc | KeyCode::Char('q') => return Ok(None),
+                _ => {}
+            }
+        }
+    }
+}
+
+fn draw_config_editor(frame: &mut ratatui::Frame<'_>, state: &ConfigEditorState) {
+    let area = frame.area();
+    frame.render_widget(Clear, area);
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(6),
+            Constraint::Length(3),
+            Constraint::Length(3),
+        ])
+        .split(area);
+
+    let header_text = if state.edit_buf.is_some() {
+        "编辑模式: Enter 确认  Esc 取消"
+    } else {
+        "↑/↓ j/k 移动  Enter 编辑字段  s 保存  q/Esc 取消"
+    };
+    let header = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(
+                "Codex Switch",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled(state.title, Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(header_text),
+    ])
+    .block(Block::default().borders(Borders::ALL).title("TUI"));
+    frame.render_widget(header, layout[0]);
+
+    let max_label_len = state.labels.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let mut list_state = ListState::default().with_selected(Some(state.selected));
+    let items: Vec<ListItem<'_>> = state
+        .labels
+        .iter()
+        .enumerate()
+        .map(|(i, label)| {
+            let pad = max_label_len - label.chars().count();
+            let display = state.display_value(i);
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("{}{}", label, " ".repeat(pad + 2)),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(display),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("Config"))
+        .highlight_style(
+            Style::default()
+                .bg(Color::Blue)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    frame.render_stateful_widget(list, layout[1], &mut list_state);
+
+    let (edit_content, edit_style) = match &state.edit_buf {
+        Some(buf) => {
+            let label = state.labels[state.selected];
+            let masked = if state.sensitive[state.selected] {
+                "*".repeat(buf.len())
+            } else {
+                buf.clone()
+            };
+            (
+                format!("{}: {}_", label, masked),
+                Style::default().fg(Color::Green),
+            )
+        }
+        None => (
+            "(Enter 开始编辑当前字段)".to_string(),
+            Style::default().fg(Color::DarkGray),
+        ),
+    };
+    let edit_bar = Paragraph::new(vec![Line::from(vec![
+        Span::styled("> ", edit_style),
+        Span::styled(edit_content, edit_style),
+    ])])
+    .block(Block::default().borders(Borders::ALL).title("Input"));
+    frame.render_widget(edit_bar, layout[2]);
+
+    let footer_text = state.message.as_deref().unwrap_or("s 保存  q/Esc 取消");
+    let footer_style = if state.message.is_some() {
+        Style::default().fg(Color::Red)
+    } else {
+        Style::default()
+    };
+    let footer = Paragraph::new(vec![Line::from(vec![Span::styled(
+        footer_text,
+        footer_style,
+    )])])
+    .block(Block::default().borders(Borders::ALL).title("Keys"));
+    frame.render_widget(footer, layout[3]);
+
+    frame.set_cursor_position((0, 0));
+}
+
+fn run_file_selector(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    state: &mut BackupFileState,
+) -> anyhow::Result<Option<String>> {
+    loop {
+        terminal.draw(|frame| draw_file_selector(frame, state))?;
+
+        if !event::poll(Duration::from_millis(250))? {
+            continue;
+        }
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => state.previous(),
+            KeyCode::Down | KeyCode::Char('j') => state.next(),
+            KeyCode::Enter => return Ok(Some(state.files[state.selected].clone())),
+            KeyCode::Esc | KeyCode::Char('q') => return Ok(None),
+            _ => {}
+        }
+    }
+}
+
+fn draw_file_selector(frame: &mut ratatui::Frame<'_>, state: &BackupFileState) {
+    let area = frame.area();
+    frame.render_widget(Clear, area);
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(5),
+            Constraint::Length(3),
+        ])
+        .split(area);
+
+    let header = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(
+                "Codex Switch",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled("Select Backup", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from("选择要恢复的备份文件，Enter 确认，q/Esc 取消"),
+    ])
+    .block(Block::default().borders(Borders::ALL).title("TUI"));
+    frame.render_widget(header, layout[0]);
+
+    let mut list_state = ListState::default().with_selected(Some(state.selected));
+    let items: Vec<ListItem<'_>> = state
+        .files
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            let suffix = if i == 0 { "  (最新)" } else { "" };
+            ListItem::new(Line::from(vec![
+                Span::raw(f.clone()),
+                Span::styled(suffix, Style::default().fg(Color::Green)),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("Backup Files"))
+        .highlight_style(
+            Style::default()
+                .bg(Color::Blue)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    frame.render_stateful_widget(list, layout[1], &mut list_state);
+
+    let footer = Paragraph::new("↑/↓ 或 j/k 移动  Enter 选择  q/Esc 取消")
+        .block(Block::default().borders(Borders::ALL).title("Keys"));
+    frame.render_widget(footer, layout[2]);
+
+    frame.set_cursor_position((0, 0));
+}
+
+fn run_password_input(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    state: &mut PasswordInputState,
+) -> anyhow::Result<Option<String>> {
+    loop {
+        terminal.draw(|frame| draw_password_input(frame, state))?;
+
+        if !event::poll(Duration::from_millis(250))? {
+            continue;
+        }
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+
+        match key.code {
+            KeyCode::Enter => return Ok(Some(state.buf.clone())),
+            KeyCode::Esc => return Ok(None),
+            KeyCode::Backspace => {
+                state.buf.pop();
+            }
+            KeyCode::Char(c) => state.buf.push(c),
+            _ => {}
+        }
+    }
+}
+
+fn draw_password_input(frame: &mut ratatui::Frame<'_>, state: &PasswordInputState) {
+    let area = frame.area();
+    frame.render_widget(Clear, area);
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    let header = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(
+                "Codex Switch",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(state.prompt),
+    ])
+    .block(Block::default().borders(Borders::ALL).title("TUI"));
+    frame.render_widget(header, layout[0]);
+
+    let masked = "*".repeat(state.buf.len());
+    let input_bar = Paragraph::new(vec![Line::from(vec![
+        Span::styled("> ", Style::default().fg(Color::Green)),
+        Span::styled(format!("{}_", masked), Style::default().fg(Color::Green)),
+    ])])
+    .block(Block::default().borders(Borders::ALL).title("Input"));
+    frame.render_widget(input_bar, layout[1]);
+
+    let footer = Paragraph::new("Enter 确认  Esc 取消")
+        .block(Block::default().borders(Borders::ALL).title("Keys"));
+    frame.render_widget(footer, layout[2]);
+
+    frame.set_cursor_position((0, 0));
+}
+
+struct ConfigEditorState {
+    title: &'static str,
+    labels: Vec<&'static str>,
+    values: Vec<String>,
+    sensitive: Vec<bool>,
+    selected: usize,
+    edit_buf: Option<String>,
+    message: Option<String>,
+}
+
+impl ConfigEditorState {
+    fn new(title: &'static str, fields: Vec<(&'static str, String, bool)>) -> Self {
+        let mut labels = Vec::with_capacity(fields.len());
+        let mut values = Vec::with_capacity(fields.len());
+        let mut sensitive = Vec::with_capacity(fields.len());
+        for (label, value, is_sensitive) in fields {
+            labels.push(label);
+            values.push(value);
+            sensitive.push(is_sensitive);
+        }
+        Self {
+            title,
+            labels,
+            values,
+            sensitive,
+            selected: 0,
+            edit_buf: None,
+            message: None,
+        }
+    }
+
+    fn start_edit(&mut self) {
+        let current = self.values[self.selected].clone();
+        self.edit_buf = Some(current);
+        self.message = None;
+    }
+
+    fn confirm_edit(&mut self) {
+        if let Some(buf) = self.edit_buf.take() {
+            self.values[self.selected] = buf;
+        }
+    }
+
+    fn cancel_edit(&mut self) {
+        self.edit_buf = None;
+    }
+
+    fn display_value(&self, i: usize) -> String {
+        if self.values[i].is_empty() {
+            "(空)".to_string()
+        } else if self.sensitive[i] {
+            "*".repeat(self.values[i].len().min(8))
+        } else {
+            self.values[i].clone()
+        }
+    }
+}
+
+struct BackupFileState {
+    files: Vec<String>,
+    selected: usize,
+}
+
+impl BackupFileState {
+    fn new(files: Vec<String>) -> Self {
+        Self { files, selected: 0 }
+    }
+
+    fn next(&mut self) {
+        if !self.files.is_empty() {
+            self.selected = (self.selected + 1) % self.files.len();
+        }
+    }
+
+    fn previous(&mut self) {
+        if !self.files.is_empty() {
+            self.selected = if self.selected == 0 {
+                self.files.len() - 1
+            } else {
+                self.selected - 1
+            };
+        }
+    }
+}
+
+struct PasswordInputState {
+    prompt: &'static str,
+    buf: String,
+}
+
+impl PasswordInputState {
+    fn new(prompt: &'static str) -> Self {
+        Self { prompt, buf: String::new() }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;

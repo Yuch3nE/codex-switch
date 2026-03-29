@@ -206,42 +206,37 @@ fn profiles_root(codex_home: &Path) -> PathBuf {
     codex_home.join("profiles")
 }
 
-fn collect_auth_files(dir: &Path, files: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+fn collect_files_with_predicate<F>(dir: &Path, files: &mut Vec<PathBuf>, pred: &F) -> anyhow::Result<()>
+where
+    F: Fn(&Path) -> bool,
+{
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            collect_auth_files(&path, files)?;
-        } else if path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .is_some_and(|name| name == "auth.json")
-        {
+            collect_files_with_predicate(&path, files, pred)?;
+        } else if pred(&path) {
             files.push(path);
         }
     }
-
     files.sort();
     Ok(())
 }
 
-fn collect_cpa_files(dir: &Path, files: &mut Vec<PathBuf>) -> anyhow::Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_cpa_files(&path, files)?;
-        } else if path
-            .extension()
-            .and_then(|value| value.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
-        {
-            files.push(path);
-        }
-    }
+fn collect_auth_files(dir: &Path, files: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+    collect_files_with_predicate(dir, files, &|path| {
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n == "auth.json")
+    })
+}
 
-    files.sort();
-    Ok(())
+fn collect_cpa_files(dir: &Path, files: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+    collect_files_with_predicate(dir, files, &|path| {
+        path.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+    })
 }
 
 fn collect_import_files(path: &Path, format: ImportFormat) -> anyhow::Result<Vec<PathBuf>> {

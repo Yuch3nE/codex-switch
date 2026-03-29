@@ -21,6 +21,16 @@ use ratatui::{
 
 use crate::model::{ProfileListOutput, ProfileSummary};
 
+/// 列表向下导航，边界折回
+fn nav_next(current: usize, len: usize) -> usize {
+    if len == 0 { 0 } else { (current + 1) % len }
+}
+
+/// 列表向上导航，边界折回
+fn nav_prev(current: usize, len: usize) -> usize {
+    if len == 0 { 0 } else if current == 0 { len - 1 } else { current - 1 }
+}
+
 pub fn select_profile(output: ProfileListOutput) -> anyhow::Result<Option<ProfileSummary>> {
     if output.profiles.is_empty() {
         return Ok(None);
@@ -500,21 +510,11 @@ impl DeleteSelectionState {
     }
 
     fn next(&mut self) {
-        if self.profiles.is_empty() {
-            return;
-        }
-        self.selected_index = (self.selected_index + 1) % self.profiles.len();
+        self.selected_index = nav_next(self.selected_index, self.profiles.len());
     }
 
     fn previous(&mut self) {
-        if self.profiles.is_empty() {
-            return;
-        }
-        self.selected_index = if self.selected_index == 0 {
-            self.profiles.len() - 1
-        } else {
-            self.selected_index - 1
-        };
+        self.selected_index = nav_prev(self.selected_index, self.profiles.len());
     }
 
     fn toggle_selected(&mut self) {
@@ -631,21 +631,11 @@ impl BackupSelectionState {
     }
 
     fn next(&mut self) {
-        if self.profiles.is_empty() {
-            return;
-        }
-        self.selected_index = (self.selected_index + 1) % self.profiles.len();
+        self.selected_index = nav_next(self.selected_index, self.profiles.len());
     }
 
     fn previous(&mut self) {
-        if self.profiles.is_empty() {
-            return;
-        }
-        self.selected_index = if self.selected_index == 0 {
-            self.profiles.len() - 1
-        } else {
-            self.selected_index - 1
-        };
+        self.selected_index = nav_prev(self.selected_index, self.profiles.len());
     }
 
     fn toggle_selected(&mut self) {
@@ -718,21 +708,11 @@ impl ProfileSelectorState {
     }
 
     fn next(&mut self) {
-        if self.profiles.is_empty() {
-            return;
-        }
-        self.selected = (self.selected + 1) % self.profiles.len();
+        self.selected = nav_next(self.selected, self.profiles.len());
     }
 
     fn previous(&mut self) {
-        if self.profiles.is_empty() {
-            return;
-        }
-        self.selected = if self.selected == 0 {
-            self.profiles.len() - 1
-        } else {
-            self.selected - 1
-        };
+        self.selected = nav_prev(self.selected, self.profiles.len());
     }
 
     fn selected_profile(&self) -> Option<&ProfileSummary> {
@@ -1250,19 +1230,11 @@ impl BackupFileState {
     }
 
     fn next(&mut self) {
-        if !self.files.is_empty() {
-            self.selected = (self.selected + 1) % self.files.len();
-        }
+        self.selected = nav_next(self.selected, self.files.len());
     }
 
     fn previous(&mut self) {
-        if !self.files.is_empty() {
-            self.selected = if self.selected == 0 {
-                self.files.len() - 1
-            } else {
-                self.selected - 1
-            };
-        }
+        self.selected = nav_prev(self.selected, self.files.len());
     }
 }
 

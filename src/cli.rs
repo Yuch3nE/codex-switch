@@ -77,71 +77,58 @@ mod tests {
 
     use super::{Cli, Command, ProfileCommand};
 
+    fn profile_command(cli: Cli) -> ProfileCommand {
+        match cli.command {
+            Command::Profile { command } => command,
+            _ => panic!("expected profile command"),
+        }
+    }
+
     #[test]
     fn profile_use_allows_missing_name_for_interactive_mode() {
         let cli = Cli::try_parse_from(["codex-switch", "profile", "use"]).unwrap();
-
-        match cli.command {
-            Command::Profile { command } => match command {
-                ProfileCommand::Use { name } => assert!(name.is_none()),
-                _ => panic!("expected profile use command"),
-            },
-            _ => panic!("expected profile command"),
+        match profile_command(cli) {
+            ProfileCommand::Use { name } => assert!(name.is_none()),
+            _ => panic!("expected profile use command"),
         }
     }
 
     #[test]
     fn profile_import_accepts_cpa_flag() {
         let cli = Cli::try_parse_from(["codex-switch", "profile", "import", "--cpa", "sample.json"]).unwrap();
-
-        match cli.command {
-            Command::Profile { command } => match command {
-                ProfileCommand::Import { cpa, path } => {
-                    assert!(cpa);
-                    assert_eq!(path, "sample.json");
-                }
-                _ => panic!("expected profile import command"),
-            },
-            _ => panic!("expected profile command"),
+        match profile_command(cli) {
+            ProfileCommand::Import { cpa, path } => {
+                assert!(cpa);
+                assert_eq!(path, "sample.json");
+            }
+            _ => panic!("expected profile import command"),
         }
     }
 
     #[test]
     fn profile_delete_parses_without_arguments() {
         let cli = Cli::try_parse_from(["codex-switch", "profile", "delete"]).unwrap();
-
-        match cli.command {
-            Command::Profile { command } => match command {
-                ProfileCommand::Delete => {}
-                _ => panic!("expected profile delete command"),
-            },
-            _ => panic!("expected profile command"),
+        match profile_command(cli) {
+            ProfileCommand::Delete => {}
+            _ => panic!("expected profile delete command"),
         }
     }
 
     #[test]
     fn profile_backup_parses() {
         let cli = Cli::try_parse_from(["codex-switch", "profile", "backup"]).unwrap();
-
-        match cli.command {
-            Command::Profile { command } => match command {
-                ProfileCommand::Backup { setup } => assert!(!setup),
-                _ => panic!("expected profile backup command"),
-            },
-            _ => panic!("expected profile command"),
+        match profile_command(cli) {
+            ProfileCommand::Backup { setup } => assert!(!setup),
+            _ => panic!("expected profile backup command"),
         }
     }
 
     #[test]
     fn profile_restore_parses() {
         let cli = Cli::try_parse_from(["codex-switch", "profile", "restore"]).unwrap();
-
-        match cli.command {
-            Command::Profile { command } => match command {
-                ProfileCommand::Restore { setup } => assert!(!setup),
-                _ => panic!("expected profile restore command"),
-            },
-            _ => panic!("expected profile command"),
+        match profile_command(cli) {
+            ProfileCommand::Restore { setup } => assert!(!setup),
+            _ => panic!("expected profile restore command"),
         }
     }
 }

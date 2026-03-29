@@ -12,6 +12,12 @@ use crate::{
     sessions,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ImportFormat {
+    Standard,
+    Cpa,
+}
+
 pub fn save_profile(
     codex_home: &Path,
     switch_home: &Path,
@@ -54,24 +60,20 @@ pub fn import_profiles(
     _codex_home: &Path,
     switch_home: &Path,
     path: &Path,
+    format: ImportFormat,
 ) -> anyhow::Result<String> {
     let state = read_state(switch_home)?;
-    let mut files = Vec::new();
-
-    if path.is_file() {
-        files.push(path.to_path_buf());
-    } else if path.is_dir() {
-        collect_auth_files(path, &mut files)?;
-    } else {
-        bail!("导入路径不存在: {}", path.display());
-    }
+    let files = collect_import_files(path, format)?;
 
     if files.is_empty() {
-        bail!("未找到可导入的 auth.json");
+        match format {
+            ImportFormat::Standard => bail!("未找到可导入的 auth.json"),
+            ImportFormat::Cpa => bail!("未找到可导入的 CPA .json 文件"),
+        }
     }
 
     for file in &files {
-        import_profile_from_path(switch_home, file)?;
+        import_profile_from_path(switch_home, file, format)?;
     }
 
     write_state(switch_home, &state)?;
@@ -187,14 +189,61 @@ fn collect_auth_files(dir: &Path, files: &mut Vec<PathBuf>) -> anyhow::Result<()
     Ok(())
 }
 
-fn import_profile_from_path(switch_home: &Path, path: &Path) -> anyhow::Result<()> {
-    let summary = auth::build_account_summary_from_path(path)?;
+fn collect_cpa_files(dir: &Path, files: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_cpa_files(&path, files)?;
+        } else if path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        {
+            files.push(path);
+        }
+    }
+
+    files.sort();
+    Ok(())
+}
+
+fn collect_import_files(path: &Path, format: ImportFormat) -> anyhow::Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+
+    if path.is_file() {
+        files.push(path.to_path_buf());
+    } else if path.is_dir() {
+        match format {
+            ImportFormat::Standard => collect_auth_files(path, &mut files)?,
+            ImportFormat::Cpa => collect_cpa_files(path, &mut files)?,
+        }
+    } else {
+        bail!("导入路径不存在: {}", path.display());
+    }
+
+    Ok(files)
+}
+
+fn import_profile_from_path(
+    switch_home: &Path,
+    path: &Path,
+    format: ImportFormat,
+) -> anyhow::Result<()> {
+    let auth_file = match format {
+        ImportFormat::Standard => auth::load_auth_file(path)?,
+        ImportFormat::Cpa => load_cpa_auth_file(path)?,
+    };
+    let summary = auth::build_account_summary_from_auth_file(auth_file.clone())?;
     let display_name = resolve_display_name(None, summary.email.as_deref())?;
     let profile_id = generate_profile_id(switch_home, &display_name)?;
     let profile_dir = profiles_root(switch_home).join(profile_id);
 
     fs::create_dir_all(&profile_dir)?;
-    fs::copy(path, profile_dir.join("auth.json"))?;
+    fs::write(
+        profile_dir.join("auth.json"),
+        serde_json::to_vec_pretty(&auth_file)?,
+    )?;
     write_profile_metadata(
         &profile_dir,
         &ProfileMetadata {
@@ -202,6 +251,39 @@ fn import_profile_from_path(switch_home: &Path, path: &Path) -> anyhow::Result<(
             primary: None,
         },
     )
+}
+
+#[derive(Debug, Deserialize)]
+struct CpaAuthFile {
+    access_token: String,
+    id_token: String,
+    account_id: String,
+    last_refresh: Option<String>,
+}
+
+fn load_cpa_auth_file(path: &Path) -> anyhow::Result<auth::AuthFile> {
+    let cpa: CpaAuthFile = serde_json::from_slice(&fs::read(path)?)
+        .with_context(|| format!("failed to parse CPA auth file: {}", path.display()))?;
+
+    if cpa.access_token.trim().is_empty() {
+        bail!("CPA 鉴权文件缺少 access_token: {}", path.display());
+    }
+    if cpa.id_token.trim().is_empty() {
+        bail!("CPA 鉴权文件缺少 id_token: {}", path.display());
+    }
+    if cpa.account_id.trim().is_empty() {
+        bail!("CPA 鉴权文件缺少 account_id: {}", path.display());
+    }
+
+    Ok(auth::AuthFile {
+        auth_mode: "chatgpt".to_string(),
+        tokens: auth::AuthTokens {
+            id_token: Some(cpa.id_token),
+            access_token: Some(cpa.access_token),
+            account_id: Some(cpa.account_id),
+        },
+        last_refresh: cpa.last_refresh,
+    })
 }
 
 fn state_path(switch_home: &Path) -> PathBuf {

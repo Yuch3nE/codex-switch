@@ -43,9 +43,14 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             },
-            cli::ProfileCommand::Import { path } => {
+            cli::ProfileCommand::Import { path, cpa } => {
                 let import_path = PathBuf::from(path);
-                profiles::import_profiles(&paths.codex_home, &paths.switch_home, &import_path)?
+                let format = if cpa {
+                    profiles::ImportFormat::Cpa
+                } else {
+                    profiles::ImportFormat::Standard
+                };
+                profiles::import_profiles(&paths.codex_home, &paths.switch_home, &import_path, format)?
             }
             cli::ProfileCommand::List => {
                 profiles::list_profiles(&paths.codex_home, &paths.switch_home)?.render(cli.format)?

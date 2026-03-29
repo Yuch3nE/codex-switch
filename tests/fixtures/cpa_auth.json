@@ -1,0 +1,12 @@
+{
+  "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL3Byb2ZpbGUiOnsiZW1haWwiOiJvaGFubmEyN0AwNTAyMDMyNC54eXoiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZX0sImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X3BsYW5fdHlwZSI6InRlYW0iLCJ1c2VyX2lkIjoidXNlci03ODkifX0.sig",
+  "account_id": "account-team-789",
+  "disabled": false,
+  "email": "ohanna27@05020324.xyz",
+  "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJlbWFpbCI6Im9oYW5uYTI3QDA1MDIwMzI0Lnh5eiIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiRG9hIiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoidGVhbSIsInVzZXJfaWQiOiJ1c2VyLTc4OSIsIm9yZ2FuaXphdGlvbnMiOlt7ImlkIjoib3JnLXRlYW0ifV19fQ.sig",
+  "last_refresh": "2026-03-28T00:28:17+08:00",
+  "priority": 6,
+  "refresh_token": "rt_example",
+  "type": "codex",
+  "websockets": false
+}

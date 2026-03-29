@@ -1,0 +1,12 @@
+{
+  "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL3Byb2ZpbGUiOnsiZW1haWwiOiJzZWNvbmRAMDUwMjAzMjQueHl6IiwiZW1haWxfdmVyaWZpZWQiOnRydWV9LCJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9wbGFuX3R5cGUiOiJ0ZWFtIiwidXNlcl9pZCI6InVzZXItOTg3In19.sig",
+  "account_id": "account-team-987",
+  "disabled": false,
+  "email": "second@05020324.xyz",
+  "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJlbWFpbCI6InNlY29uZEAwNTAyMDMyNC54eXoiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6IlNlY29uZCIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X3BsYW5fdHlwZSI6InRlYW0iLCJ1c2VyX2lkIjoidXNlci05ODciLCJvcmdhbml6YXRpb25zIjpbeyJpZCI6Im9yZy10ZWFtLTIifV19fQ.sig",
+  "last_refresh": "2026-03-29T01:02:03+08:00",
+  "priority": 5,
+  "refresh_token": "rt_example_alt",
+  "type": "codex",
+  "websockets": false
+}

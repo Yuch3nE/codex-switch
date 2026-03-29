@@ -399,3 +399,118 @@ fn profile_import_recursively_scans_directory_for_auth_files() {
         .stdout(contains("\"email\": \"tetel@05020324.xyz\""))
         .stdout(contains("\"email\": \"alt@example.com\""));
 }
+
+#[test]
+fn profile_import_cpa_file_normalizes_into_standard_auth_json() {
+    let temp = tempdir().unwrap();
+    let codex_dir = temp.path().join(".codex");
+    let switch_dir = temp.path().join(".codex-auth-switch");
+    let import_dir = temp.path().join("imports");
+    fs::create_dir_all(&codex_dir).unwrap();
+    fs::create_dir_all(&import_dir).unwrap();
+
+    let import_file = import_dir.join("team.json");
+    fs::write(&import_file, include_str!("fixtures/cpa_auth.json")).unwrap();
+
+    Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .args(["profile", "import", "--cpa", import_file.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(contains("已导入 1 个 profile"));
+
+    Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .args(["--format", "json", "profile", "list"])
+        .assert()
+        .success()
+        .stdout(contains("\"email\": \"ohanna27@05020324.xyz\""))
+        .stdout(contains("\"subscription_plan\": \"team\""));
+
+    let normalized_auth = fs::read_to_string(switch_dir.join("profiles/ohanna27/auth.json")).unwrap();
+    let value: Value = serde_json::from_str(&normalized_auth).unwrap();
+
+    assert_eq!(value.get("auth_mode").and_then(Value::as_str), Some("chatgpt"));
+    assert_eq!(value.get("last_refresh").and_then(Value::as_str), Some("2026-03-28T00:28:17+08:00"));
+    assert_eq!(
+        value
+            .get("tokens")
+            .and_then(|tokens| tokens.get("account_id"))
+            .and_then(Value::as_str),
+        Some("account-team-789")
+    );
+    assert!(value.get("access_token").is_none());
+}
+
+#[test]
+fn profile_use_writes_standard_auth_json_after_cpa_import() {
+    let temp = tempdir().unwrap();
+    let codex_dir = temp.path().join(".codex");
+    let import_dir = temp.path().join("imports");
+    fs::create_dir_all(&codex_dir).unwrap();
+    fs::create_dir_all(&import_dir).unwrap();
+
+    fs::write(
+        codex_dir.join("auth.json"),
+        include_str!("fixtures/auth.json"),
+    )
+    .unwrap();
+
+    let import_file = import_dir.join("team.json");
+    fs::write(&import_file, include_str!("fixtures/cpa_auth.json")).unwrap();
+
+    Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .args(["profile", "import", "--cpa", import_file.to_str().unwrap()])
+        .assert()
+        .success();
+
+    Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .args(["profile", "use", "ohanna27"])
+        .assert()
+        .success()
+        .stdout(contains("已切换到 profile: ohanna27"));
+
+    let current_auth = fs::read_to_string(codex_dir.join("auth.json")).unwrap();
+    let value: Value = serde_json::from_str(&current_auth).unwrap();
+
+    assert_eq!(value.get("auth_mode").and_then(Value::as_str), Some("chatgpt"));
+    assert!(value.get("tokens").is_some());
+    assert!(value.get("refresh_token").is_none());
+}
+
+#[test]
+fn profile_import_cpa_recursively_scans_json_files() {
+    let temp = tempdir().unwrap();
+    let codex_dir = temp.path().join(".codex");
+    let import_dir = temp.path().join("imports");
+    let nested_dir = import_dir.join("nested/deeper");
+    fs::create_dir_all(&codex_dir).unwrap();
+    fs::create_dir_all(&nested_dir).unwrap();
+
+    fs::write(import_dir.join("team-a.json"), include_str!("fixtures/cpa_auth.json")).unwrap();
+    fs::write(nested_dir.join("team-b.json"), include_str!("fixtures/cpa_auth_alt.json")).unwrap();
+    fs::write(import_dir.join("ignore.txt"), "not json").unwrap();
+
+    Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .args(["profile", "import", "--cpa", import_dir.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(contains("已导入 2 个 profile"));
+
+    Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .args(["--format", "json", "profile", "list"])
+        .assert()
+        .success()
+        .stdout(contains("\"email\": \"ohanna27@05020324.xyz\""))
+        .stdout(contains("\"email\": \"second@05020324.xyz\""));
+}

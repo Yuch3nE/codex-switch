@@ -1,18 +1,18 @@
 use std::{fs, path::Path};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{jwt, model::AccountSummary};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AuthFile {
     pub auth_mode: String,
     pub tokens: AuthTokens,
     pub last_refresh: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, Serialize)]
 pub struct AuthTokens {
     pub id_token: Option<String>,
     pub access_token: Option<String>,
@@ -33,7 +33,7 @@ pub fn load_auth_file(path: &Path) -> anyhow::Result<AuthFile> {
     Ok(serde_json::from_slice(&fs::read(path)?)?)
 }
 
-fn build_account_summary_from_auth_file(auth_file: AuthFile) -> anyhow::Result<AccountSummary> {
+pub fn build_account_summary_from_auth_file(auth_file: AuthFile) -> anyhow::Result<AccountSummary> {
     let id_payload = auth_file
         .tokens
         .id_token

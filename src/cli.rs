@@ -31,7 +31,7 @@ pub enum Command {
 pub enum ProfileCommand {
     Save { name: Option<String> },
     Use { name: Option<String> },
-    Import { path: String },
+    Import { #[arg(long)] cpa: bool, path: String },
     List,
 }
 
@@ -49,6 +49,22 @@ mod tests {
             Command::Profile { command } => match command {
                 ProfileCommand::Use { name } => assert!(name.is_none()),
                 _ => panic!("expected profile use command"),
+            },
+            _ => panic!("expected profile command"),
+        }
+    }
+
+    #[test]
+    fn profile_import_accepts_cpa_flag() {
+        let cli = Cli::try_parse_from(["codex-switch", "profile", "import", "--cpa", "sample.json"]).unwrap();
+
+        match cli.command {
+            Command::Profile { command } => match command {
+                ProfileCommand::Import { cpa, path } => {
+                    assert!(cpa);
+                    assert_eq!(path, "sample.json");
+                }
+                _ => panic!("expected profile import command"),
             },
             _ => panic!("expected profile command"),
         }

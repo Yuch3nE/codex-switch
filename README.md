@@ -28,6 +28,7 @@
 - `profile import <path>`
   - 导入指定 `auth.json` 文件
   - 或递归导入某个目录树下的所有 `auth.json`
+  - 支持 `--cpa` 导入 CPA 格式鉴权文件，并在导入时转成标准 `auth.json`
   - 只导入到 profiles，不会自动切换当前激活账号
 - `profile list`
   - 查看已保存 profile 列表
@@ -97,10 +98,24 @@ cargo run -- profile import /path/to/auth.json
 cargo run -- profile import /path/to/folder
 ```
 
+导入 CPA 格式鉴权文件：
+
+```bash
+cargo run -- profile import --cpa /path/to/cpa.json
+```
+
+递归导入目录中的所有 CPA `.json` 文件：
+
+```bash
+cargo run -- profile import --cpa /path/to/folder
+```
+
 导入行为说明：
 
 - 如果传入的是文件，就按单文件导入
 - 如果传入的是目录，就递归扫描目录树中的所有 `auth.json`
+- 如果传入 `--cpa`，单文件按 CPA JSON 导入，目录则递归扫描所有 `.json`
+- `--cpa` 导入时会在 profile 中直接落成标准 `auth.json`
 - 导入不会自动切换当前激活 profile
 - 导入得到的 profile 默认使用邮箱前缀作为显示名，内部 id 会自动去重
 
@@ -149,6 +164,7 @@ cargo run -- usage --format json
 
 - `profile save` 时，会把当前账号的实时额度一起写进该 profile 的快照
 - `profile import` 时，只导入认证信息，不会伪造额度快照
+- `profile import --cpa` 时，会先把 CPA 鉴权文件转成标准 `auth.json` 再保存
 - `profile use` 时，会在切走前先把当前激活账号的额度快照刷新一次
 
 ### usage 展示规则

@@ -394,60 +394,40 @@ fn closing_row(label: &str, value: &str) -> String {
     format!("╰─ {}│ {}", colorize_label(label), value)
 }
 
-fn colorize_header(text: &str) -> String {
+fn colorize(text: &str, ansi_code: &str) -> String {
     if supports_color() {
-        format!("\x1b[1;38;5;51m{}\x1b[0m", text)
+        format!("\x1b[{}m{}\x1b[0m", ansi_code, text)
     } else {
         text.to_string()
     }
+}
+
+fn colorize_header(text: &str) -> String {
+    colorize(text, "1;38;5;51")
 }
 
 fn colorize_label(text: &str) -> String {
-    if supports_color() {
-        format!("\x1b[33m{}\x1b[0m", text)
-    } else {
-        text.to_string()
-    }
+    colorize(text, "33")
 }
 
 fn colorize_progress_filled(text: &str) -> String {
-    if supports_color() {
-        format!("\x1b[1;38;5;46m{}\x1b[0m", text)
-    } else {
-        text.to_string()
-    }
+    colorize(text, "1;38;5;46")
 }
 
 fn colorize_progress_empty(text: &str) -> String {
-    if supports_color() {
-        format!("\x1b[38;5;240m{}\x1b[0m", text)
-    } else {
-        text.to_string()
-    }
+    colorize(text, "38;5;240")
 }
 
 fn colorize_border(text: &str) -> String {
-    if supports_color() {
-        format!("\x1b[38;5;39m{}\x1b[0m", text)
-    } else {
-        text.to_string()
-    }
+    colorize(text, "38;5;39")
 }
 
 fn colorize_table_header(text: &str) -> String {
-    if supports_color() {
-        format!("\x1b[1;38;5;228m{}\x1b[0m", text)
-    } else {
-        text.to_string()
-    }
+    colorize(text, "1;38;5;228")
 }
 
 fn colorize_group_heading(text: &str) -> String {
-    if supports_color() {
-        format!("\x1b[1;38;5;219m{}\x1b[0m", text)
-    } else {
-        text.to_string()
-    }
+    colorize(text, "1;38;5;219")
 }
 
 fn render_active_email(active: bool, email: Option<&str>) -> String {

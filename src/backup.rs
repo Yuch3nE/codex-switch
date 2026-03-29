@@ -540,33 +540,38 @@ fn config_from_values(values: Vec<String>) -> anyhow::Result<BackupConfig> {
     })
 }
 
-pub fn run_backup(switch_home: &Path, setup: bool) -> anyhow::Result<String> {
+/// 加载已有配置，或（首次/--setup 时）弹出 TUI 向导让用户填写。
+/// `action_label` 用于取消时的提示，如 "备份" 或 "恢复"。
+fn load_or_setup_config(
+    switch_home: &Path,
+    setup: bool,
+    action_label: &str,
+) -> anyhow::Result<Option<BackupConfig>> {
     let existing = BackupConfig::load(switch_home)?;
-
-    // 有配置且不是 --setup 模式 → 直接备份
-    let config = if !setup {
+    if !setup {
         if let Some(cfg) = existing {
-            cfg
-        } else {
-            // 首次运行，无配置，打开 TUI 向导
-            let fields = config_fields(&default_config());
-            let Some(values) = crate::tui::edit_config_fields("Backup 初始配置", fields)? else {
-                return Ok("已取消备份".to_string());
-            };
-            let cfg = config_from_values(values)?;
-            cfg.save(switch_home)?;
-            cfg
+            return Ok(Some(cfg));
         }
+    }
+    // 首次运行或 --setup：弹向导
+    let title = if setup {
+        if action_label == "备份" { "Backup Config" } else { "Restore Config" }
     } else {
-        // --setup 模式：无论如何都打开编辑器
-        let base = existing.unwrap_or_else(default_config);
-        let fields = config_fields(&base);
-        let Some(values) = crate::tui::edit_config_fields("Backup Config", fields)? else {
-            return Ok("已取消备份".to_string());
-        };
-        let cfg = config_from_values(values)?;
-        cfg.save(switch_home)?;
-        cfg
+        if action_label == "备份" { "Backup 初始配置" } else { "Restore 初始配置" }
+    };
+    let base = existing.unwrap_or_else(default_config);
+    let fields = config_fields(&base);
+    let Some(values) = crate::tui::edit_config_fields(title, fields)? else {
+        return Ok(None);
+    };
+    let cfg = config_from_values(values)?;
+    cfg.save(switch_home)?;
+    Ok(Some(cfg))
+}
+
+pub fn run_backup(switch_home: &Path, setup: bool) -> anyhow::Result<String> {
+    let Some(config) = load_or_setup_config(switch_home, setup, "备份")? else {
+        return Ok("已取消备份".to_string());
     };
 
     let profiles_dir = switch_home.join("profiles");
@@ -603,30 +608,8 @@ pub fn run_backup(switch_home: &Path, setup: bool) -> anyhow::Result<String> {
 }
 
 pub fn run_restore(switch_home: &Path, setup: bool) -> anyhow::Result<String> {
-    let existing = BackupConfig::load(switch_home)?;
-
-    // 有配置且不是 --setup 模式 → 直接进文件选择
-    let config = if !setup {
-        if let Some(cfg) = existing {
-            cfg
-        } else {
-            let fields = config_fields(&default_config());
-            let Some(values) = crate::tui::edit_config_fields("Restore 初始配置", fields)? else {
-                return Ok("已取消恢复".to_string());
-            };
-            let cfg = config_from_values(values)?;
-            cfg.save(switch_home)?;
-            cfg
-        }
-    } else {
-        let base = existing.unwrap_or_else(default_config);
-        let fields = config_fields(&base);
-        let Some(values) = crate::tui::edit_config_fields("Restore Config", fields)? else {
-            return Ok("已取消恢复".to_string());
-        };
-        let cfg = config_from_values(values)?;
-        cfg.save(switch_home)?;
-        cfg
+    let Some(config) = load_or_setup_config(switch_home, setup, "恢复")? else {
+        return Ok("已取消恢复".to_string());
     };
 
     let mut files = webdav_list_backups(&config)?;

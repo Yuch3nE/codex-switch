@@ -76,11 +76,11 @@ pub fn build_account_summary_from_auth_file(auth_file: AuthFile) -> anyhow::Resu
         auth_mode: auth_file.auth_mode,
         account_id: auth_file.tokens.account_id,
         user_id: extract_string(auth_meta, "user_id"),
-        email: extract_root_string(id_payload.as_ref(), "email")
+        email: extract_string(id_payload.as_ref(), "email")
             .or_else(|| extract_string(profile_meta, "email")),
-        email_verified: extract_root_bool(id_payload.as_ref(), "email_verified")
+        email_verified: extract_bool(id_payload.as_ref(), "email_verified")
             .or_else(|| extract_bool(profile_meta, "email_verified")),
-        name: extract_root_string(id_payload.as_ref(), "name"),
+        name: extract_string(id_payload.as_ref(), "name"),
         subscription_plan: extract_string(auth_meta, "chatgpt_plan_type"),
         last_refresh: auth_file.last_refresh,
         organization_count: auth_meta
@@ -108,13 +108,5 @@ fn extract_string(value: Option<&Value>, key: &str) -> Option<String> {
 }
 
 fn extract_bool(value: Option<&Value>, key: &str) -> Option<bool> {
-    value?.get(key)?.as_bool()
-}
-
-fn extract_root_string(value: Option<&Value>, key: &str) -> Option<String> {
-    value?.get(key)?.as_str().map(ToOwned::to_owned)
-}
-
-fn extract_root_bool(value: Option<&Value>, key: &str) -> Option<bool> {
     value?.get(key)?.as_bool()
 }

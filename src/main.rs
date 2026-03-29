@@ -20,6 +20,18 @@ struct AppPaths {
 
 fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
+
+    if let cli::Command::Completions { shell } = &cli.command {
+        use clap::CommandFactory;
+        clap_complete::generate(
+            *shell,
+            &mut cli::Cli::command(),
+            "codex-switch",
+            &mut std::io::stdout(),
+        );
+        return Ok(());
+    }
+
     let paths = resolve_app_paths()?;
 
     let output = match cli.command {
@@ -87,6 +99,7 @@ fn main() -> anyhow::Result<()> {
                 profiles::list_profiles(&paths.codex_home, &paths.switch_home)?.render(cli.format)?
             }
         },
+        cli::Command::Completions { .. } => unreachable!("completions handled before app paths"),
     };
 
     if !output.is_empty() {

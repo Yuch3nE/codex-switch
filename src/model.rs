@@ -10,6 +10,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::cli::OutputFormat;
 
+const LOW_REMAINING_WARNING_THRESHOLD: f64 = 20.0;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AccountSummary {
     pub auth_mode: String,
@@ -237,16 +239,33 @@ impl PrimaryRateLimit {
     pub fn render_remaining_progress(&self) -> String {
         let width = 20usize;
         let remaining_percent = (100.0 - self.used_percent).clamp(0.0, 100.0);
+        let warning = remaining_percent < LOW_REMAINING_WARNING_THRESHOLD;
         let filled = ((remaining_percent / 100.0) * width as f64)
             .floor()
             .clamp(0.0, width as f64) as usize;
         let filled_bar = "█".repeat(filled);
         let empty_bar = "░".repeat(width.saturating_sub(filled));
+        let filled_rendered = if warning {
+            colorize_progress_warning(&filled_bar)
+        } else {
+            colorize_progress_filled(&filled_bar)
+        };
+        let empty_rendered = if warning {
+            colorize_progress_warning(&empty_bar)
+        } else {
+            colorize_progress_empty(&empty_bar)
+        };
+        let warning_suffix = if warning {
+            format!(" {}", colorize_progress_warning("⚠"))
+        } else {
+            String::new()
+        };
         format!(
-            "╢{}{}╟ {:.1}%",
-            colorize_progress_filled(&filled_bar),
-            colorize_progress_empty(&empty_bar),
+            "╢{}{}╟ {:.1}%{}",
+            filled_rendered,
+            empty_rendered,
             remaining_percent,
+            warning_suffix,
         )
     }
 
@@ -416,6 +435,10 @@ fn colorize_progress_filled(text: &str) -> String {
 
 fn colorize_progress_empty(text: &str) -> String {
     colorize(text, "38;5;240")
+}
+
+fn colorize_progress_warning(text: &str) -> String {
+    colorize(text, "1;38;5;196")
 }
 
 fn colorize_border(text: &str) -> String {

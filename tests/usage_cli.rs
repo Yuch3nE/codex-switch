@@ -91,6 +91,16 @@ fn help_lists_usage_and_hides_summary() {
         .stdout(is_match(r"(?m)^\s*summary\s*$").unwrap().not());
 }
 
+    #[test]
+    fn completions_generates_script_for_powershell() {
+        let mut cmd = Command::cargo_bin("codex-switch").unwrap();
+        cmd.args(["completions", "powershell"]);
+
+        cmd.assert()
+        .success()
+        .stdout(contains("codex-switch"));
+    }
+
 #[test]
 fn usage_command_merges_account_and_usage_in_json() {
     let temp = tempdir().unwrap();
@@ -467,4 +477,42 @@ fn usage_text_renders_team_dual_limits_and_free_weekly_limit() {
     assert!(stdout.contains("╢███████████████████░╟ 97.0%"));
     assert!(stdout.contains("╢████████████░░░░░░░░╟ 60.0%"));
     assert!(stdout.contains("未知"));
+}
+
+#[test]
+fn usage_text_marks_low_remaining_with_warning_symbol() {
+    let temp = tempdir().unwrap();
+    let codex_dir = temp.path().join(".codex");
+    let sessions_dir = codex_dir.join("sessions/2026/03/29");
+
+    fs::create_dir_all(&sessions_dir).unwrap();
+    fs::write(
+        codex_dir.join("auth.json"),
+        auth_fixture_with_email("warn@example.com", "account-warn"),
+    )
+    .unwrap();
+    fs::write(
+        sessions_dir.join("rollout-warn.jsonl"),
+        rollout_with_limits("plus", Some((85.0, 300, 1774794986)), None),
+    )
+    .unwrap();
+
+    Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .args(["profile", "save", "warn"])
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .arg("usage")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("15.0% ⚠"));
 }

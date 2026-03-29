@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, ValueEnum)]
 pub enum OutputFormat {
@@ -30,6 +31,11 @@ pub enum Command {
     Profile {
         #[command(subcommand)]
         command: ProfileCommand,
+    },
+    /// 输出 Shell 自动补全脚本（bash / zsh / fish / powershell）
+    Completions {
+        /// 目标 Shell
+        shell: Shell,
     },
 }
 
@@ -129,6 +135,15 @@ mod tests {
         match profile_command(cli) {
             ProfileCommand::Restore { setup } => assert!(!setup),
             _ => panic!("expected profile restore command"),
+        }
+    }
+
+    #[test]
+    fn completions_parses_shell() {
+        let cli = Cli::try_parse_from(["codex-switch", "completions", "zsh"]).unwrap();
+        match cli.command {
+            Command::Completions { shell } => assert_eq!(shell, clap_complete::Shell::Zsh),
+            _ => panic!("expected completions command"),
         }
     }
 }

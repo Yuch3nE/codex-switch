@@ -15,6 +15,7 @@
 | `codex-switch profile import` | 导入 auth.json 文件 |
 | `codex-switch profile backup` | 备份所有账号到 WebDAV |
 | `codex-switch profile restore` | 从 WebDAV 恢复账号 |
+| `codex-switch completions` | 生成 Shell 自动补全脚本 |
 
 ## 安装
 
@@ -64,6 +65,15 @@ codex-switch usage
 
 ```bash
 codex-switch usage --format json
+```
+
+当任一额度剩余低于 20% 时，进度条会高亮为红色并追加 `⚠` 警告标记。
+
+### 生成 Shell 自动补全
+
+```bash
+# 支持 bash / zsh / fish / powershell
+codex-switch completions zsh > ~/.zsh/completions/_codex-switch
 ```
 
 ### 保存账号
@@ -181,6 +191,7 @@ codex-switch profile restore --setup
 `usage` 展示规则：
 - **当前激活账号**：优先读取 `~/.codex/sessions` 实时数据，无则回退到快照
 - **其他账号**：显示上次 `save` 或 `use` 时同步的快照
+- **额度预警**：当剩余额度 `< 20%` 时，进度条标红并显示 `⚠`
 
 快照会在以下时机更新：
 - `profile save` — 保存当前账号时

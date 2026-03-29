@@ -27,6 +27,7 @@
   - 切换前会先刷新当前激活账号的额度快照
 - `profile import <path>`
   - 导入指定 `auth.json` 文件
+  - 单文件导入时会自动识别标准 `auth.json` 或 CPA 鉴权文件
   - 或递归导入某个目录树下的所有 `auth.json`
   - 支持 `--cpa` 导入 CPA 格式鉴权文件，并在导入时转成标准 `auth.json`
   - 只导入到 profiles，不会自动切换当前激活账号
@@ -92,6 +93,12 @@ cargo run -- profile list
 cargo run -- profile import /path/to/auth.json
 ```
 
+如果单文件实际是 CPA 格式，也可以直接这样导入，程序会自动识别并转成标准 `auth.json`：
+
+```bash
+cargo run -- profile import /path/to/cpa.json
+```
+
 递归导入目录中的所有 `auth.json`：
 
 ```bash
@@ -113,6 +120,7 @@ cargo run -- profile import --cpa /path/to/folder
 导入行为说明：
 
 - 如果传入的是文件，就按单文件导入
+- 单文件导入时会自动识别标准 `auth.json` 与 CPA 鉴权文件
 - 如果传入的是目录，就递归扫描目录树中的所有 `auth.json`
 - 如果传入 `--cpa`，单文件按 CPA JSON 导入，目录则递归扫描所有 `.json`
 - `--cpa` 导入时会在 profile 中直接落成标准 `auth.json`

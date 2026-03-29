@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{
     auth,
@@ -230,10 +231,7 @@ fn import_profile_from_path(
     path: &Path,
     format: ImportFormat,
 ) -> anyhow::Result<()> {
-    let auth_file = match format {
-        ImportFormat::Standard => auth::load_auth_file(path)?,
-        ImportFormat::Cpa => load_cpa_auth_file(path)?,
-    };
+    let auth_file = load_import_auth_file(path, format)?;
     let summary = auth::build_account_summary_from_auth_file(auth_file.clone())?;
     let display_name = resolve_display_name(None, summary.email.as_deref())?;
     let profile_id = generate_profile_id(switch_home, &display_name)?;
@@ -253,11 +251,49 @@ fn import_profile_from_path(
     )
 }
 
+fn load_import_auth_file(path: &Path, format: ImportFormat) -> anyhow::Result<auth::AuthFile> {
+    match format {
+        ImportFormat::Standard => load_standard_or_cpa_auth_file(path),
+        ImportFormat::Cpa => load_cpa_auth_file(path),
+    }
+}
+
+fn load_standard_or_cpa_auth_file(path: &Path) -> anyhow::Result<auth::AuthFile> {
+    let contents = fs::read(path)?;
+    let value: Value = serde_json::from_slice(&contents)?;
+
+    if looks_like_standard_auth(&value) {
+        return Ok(serde_json::from_value(value)?);
+    }
+
+    if looks_like_cpa_auth(&value) {
+        let cpa: CpaAuthFile = serde_json::from_value(value)?;
+        return cpa_auth_to_auth_file(cpa, path);
+    }
+
+    bail!("不支持的鉴权文件格式: {}", path.display())
+}
+
+fn looks_like_standard_auth(value: &Value) -> bool {
+    value
+        .get("auth_mode")
+        .and_then(Value::as_str)
+        .is_some()
+        && value.get("tokens").and_then(Value::as_object).is_some()
+}
+
+fn looks_like_cpa_auth(value: &Value) -> bool {
+    value.get("access_token").and_then(Value::as_str).is_some()
+        && value.get("id_token").and_then(Value::as_str).is_some()
+        && value.get("account_id").and_then(Value::as_str).is_some()
+}
+
 #[derive(Debug, Deserialize)]
 struct CpaAuthFile {
     access_token: String,
     id_token: String,
     account_id: String,
+    refresh_token: Option<String>,
     last_refresh: Option<String>,
 }
 
@@ -265,6 +301,10 @@ fn load_cpa_auth_file(path: &Path) -> anyhow::Result<auth::AuthFile> {
     let cpa: CpaAuthFile = serde_json::from_slice(&fs::read(path)?)
         .with_context(|| format!("failed to parse CPA auth file: {}", path.display()))?;
 
+    cpa_auth_to_auth_file(cpa, path)
+}
+
+fn cpa_auth_to_auth_file(cpa: CpaAuthFile, path: &Path) -> anyhow::Result<auth::AuthFile> {
     if cpa.access_token.trim().is_empty() {
         bail!("CPA 鉴权文件缺少 access_token: {}", path.display());
     }
@@ -282,6 +322,7 @@ fn load_cpa_auth_file(path: &Path) -> anyhow::Result<auth::AuthFile> {
             access_token: Some(cpa.access_token),
             account_id: Some(cpa.account_id),
         },
+        refresh_token: cpa.refresh_token,
         last_refresh: cpa.last_refresh,
     })
 }

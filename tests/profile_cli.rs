@@ -441,7 +441,42 @@ fn profile_import_cpa_file_normalizes_into_standard_auth_json() {
             .and_then(Value::as_str),
         Some("account-team-789")
     );
+    assert_eq!(
+        value.get("refresh_token").and_then(Value::as_str),
+        Some("rt_example")
+    );
     assert!(value.get("access_token").is_none());
+}
+
+#[test]
+fn profile_import_auto_detects_cpa_file_without_flag() {
+    let temp = tempdir().unwrap();
+    let switch_dir = temp.path().join(".codex-auth-switch");
+    let import_dir = temp.path().join("imports");
+    fs::create_dir_all(&import_dir).unwrap();
+
+    let import_file = import_dir.join("team.json");
+    fs::write(&import_file, include_str!("fixtures/cpa_auth.json")).unwrap();
+
+    Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .args(["profile", "import", import_file.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(contains("已导入 1 个 profile"));
+
+    let normalized_auth = fs::read_to_string(switch_dir.join("profiles/ohanna27/auth.json")).unwrap();
+    let value: Value = serde_json::from_str(&normalized_auth).unwrap();
+
+    assert_eq!(value.get("auth_mode").and_then(Value::as_str), Some("chatgpt"));
+    assert_eq!(
+        value
+            .get("tokens")
+            .and_then(|tokens| tokens.get("account_id"))
+            .and_then(Value::as_str),
+        Some("account-team-789")
+    );
 }
 
 #[test]
@@ -481,7 +516,10 @@ fn profile_use_writes_standard_auth_json_after_cpa_import() {
 
     assert_eq!(value.get("auth_mode").and_then(Value::as_str), Some("chatgpt"));
     assert!(value.get("tokens").is_some());
-    assert!(value.get("refresh_token").is_none());
+    assert_eq!(
+        value.get("refresh_token").and_then(Value::as_str),
+        Some("rt_example")
+    );
 }
 
 #[test]

@@ -32,8 +32,20 @@ pub enum ProfileCommand {
     Save { name: Option<String> },
     Use { name: Option<String> },
     Delete,
-    Backup,
-    Restore,
+    /// 备份所有 profiles 到 WebDAV。首次需配置连接信息，后续直接备份。
+    /// 如需修改配置请加 --setup。
+    Backup {
+        /// 打开 TUI 配置向导（重新配置 WebDAV 连接信息）
+        #[arg(long)]
+        setup: bool,
+    },
+    /// 从 WebDAV 备份文件恢复 profiles。首次需配置连接信息。
+    /// 如需修改配置请加 --setup。
+    Restore {
+        /// 打开 TUI 配置向导（重新配置 WebDAV 连接信息）
+        #[arg(long)]
+        setup: bool,
+    },
     Import { #[arg(long)] cpa: bool, path: String },
     List,
 }
@@ -92,7 +104,7 @@ mod tests {
 
         match cli.command {
             Command::Profile { command } => match command {
-                ProfileCommand::Backup => {}
+                ProfileCommand::Backup { setup } => assert!(!setup),
                 _ => panic!("expected profile backup command"),
             },
             _ => panic!("expected profile command"),
@@ -105,7 +117,7 @@ mod tests {
 
         match cli.command {
             Command::Profile { command } => match command {
-                ProfileCommand::Restore => {}
+                ProfileCommand::Restore { setup } => assert!(!setup),
                 _ => panic!("expected profile restore command"),
             },
             _ => panic!("expected profile command"),

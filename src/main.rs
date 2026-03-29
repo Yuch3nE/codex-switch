@@ -1,4 +1,5 @@
 mod auth;
+mod backup;
 mod cli;
 mod jwt;
 mod model;
@@ -77,6 +78,8 @@ fn main() -> anyhow::Result<()> {
                     "已取消删除".to_string()
                 }
             }
+            cli::ProfileCommand::Backup => backup::run_backup(&paths.switch_home)?,
+            cli::ProfileCommand::Restore => backup::run_restore(&paths.switch_home)?,
             cli::ProfileCommand::Import { path, cpa } => {
                 let import_path = PathBuf::from(path);
                 let format = if cpa {

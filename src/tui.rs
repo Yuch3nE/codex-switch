@@ -49,6 +49,22 @@ pub fn select_profiles_to_delete(
     with_tui(|terminal| run_delete_selector(terminal, &mut selector))
 }
 
+pub fn select_backup_profiles(
+    profiles: Vec<ProfileSummary>,
+    existing_ids: std::collections::HashSet<String>,
+) -> anyhow::Result<Option<Vec<ProfileSummary>>> {
+    if profiles.is_empty() {
+        return Ok(Some(vec![]));
+    }
+
+    if !io::stdout().is_terminal() {
+        anyhow::bail!("交互式 TUI 需要在真实终端中运行");
+    }
+
+    let mut selector = BackupSelectionState::new(profiles, existing_ids);
+    with_tui(|terminal| run_backup_selector(terminal, &mut selector))
+}
+
 fn with_tui<F, T>(f: F) -> anyhow::Result<T>
 where
     F: FnOnce(&mut Terminal<CrosstermBackend<io::Stdout>>) -> anyhow::Result<T>,
@@ -66,6 +82,126 @@ where
     terminal.show_cursor().ok();
 
     result
+}
+
+fn run_backup_selector(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    selector: &mut BackupSelectionState,
+) -> anyhow::Result<Option<Vec<ProfileSummary>>> {
+    loop {
+        terminal.draw(|frame| draw_backup_selector(frame, selector))?;
+
+        if !event::poll(Duration::from_millis(250))? {
+            continue;
+        }
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => selector.previous(),
+            KeyCode::Down | KeyCode::Char('j') => selector.next(),
+            KeyCode::Char(' ') => selector.toggle_selected(),
+            KeyCode::Enter => {
+                if selector.selected.is_empty() {
+                    selector.message = Some("至少选择一个 profile".to_string());
+                    continue;
+                }
+                let selected: Vec<ProfileSummary> = selector
+                    .profiles
+                    .iter()
+                    .filter(|p| selector.selected.contains(&p.id))
+                    .cloned()
+                    .collect();
+                return Ok(Some(selected));
+            }
+            KeyCode::Esc | KeyCode::Char('q') => return Ok(None),
+            _ => {}
+        }
+    }
+}
+
+fn draw_backup_selector(frame: &mut ratatui::Frame<'_>, selector: &BackupSelectionState) {
+    let area = frame.area();
+    frame.render_widget(Clear, area);
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(10),
+            Constraint::Length(3),
+        ])
+        .split(area);
+
+    let header = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(
+                "Codex Switch",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled("Backup Restore", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from("空格多选，Enter 导入选中，q 或 Esc 退出"),
+    ])
+    .block(Block::default().borders(Borders::ALL).title("TUI"));
+    frame.render_widget(header, layout[0]);
+
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
+        .split(layout[1]);
+
+    let mut list_state = ListState::default().with_selected(Some(selector.selected_index));
+    let items: Vec<ListItem<'_>> = selector
+        .profiles
+        .iter()
+        .map(|profile| {
+            let checked = if selector.selected.contains(&profile.id) { "■" } else { "□" };
+            let exists_mark = if selector.is_existing(&profile.id) { "⚠" } else { " " };
+            ListItem::new(Line::from(vec![
+                Span::styled(checked, Style::default().fg(Color::Yellow)),
+                Span::raw(" "),
+                Span::styled(exists_mark, Style::default().fg(Color::Red)),
+                Span::raw(" "),
+                Span::styled(&profile.name, Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" "),
+                Span::styled(
+                    format!("({})", profile.id),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("Backup Profiles"))
+        .highlight_style(
+            Style::default()
+                .bg(Color::Blue)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    frame.render_stateful_widget(list, body[0], &mut list_state);
+
+    let detail = Paragraph::new(selector.detail_lines())
+        .wrap(Wrap { trim: true })
+        .block(Block::default().borders(Borders::ALL).title("Detail"));
+    frame.render_widget(detail, body[1]);
+
+    let footer =
+        Paragraph::new("↑/↓ 或 j/k 移动  Space 勾选  Enter 导入  q/Esc 退出  ⚠=本地已存在")
+            .block(Block::default().borders(Borders::ALL).title("Keys"));
+    frame.render_widget(footer, layout[2]);
+
+    frame.set_cursor_position((0, 0));
 }
 
 fn run_selector(
@@ -471,6 +607,107 @@ impl DeleteConfirmState {
     }
 }
 
+struct BackupSelectionState {
+    profiles: Vec<ProfileSummary>,
+    selected_index: usize,
+    selected: BTreeSet<String>,
+    existing: std::collections::HashSet<String>,
+    message: Option<String>,
+}
+
+impl BackupSelectionState {
+    fn new(profiles: Vec<ProfileSummary>, existing: std::collections::HashSet<String>) -> Self {
+        Self {
+            profiles,
+            selected_index: 0,
+            selected: BTreeSet::new(),
+            existing,
+            message: None,
+        }
+    }
+
+    fn is_existing(&self, id: &str) -> bool {
+        self.existing.contains(id)
+    }
+
+    fn next(&mut self) {
+        if self.profiles.is_empty() {
+            return;
+        }
+        self.selected_index = (self.selected_index + 1) % self.profiles.len();
+    }
+
+    fn previous(&mut self) {
+        if self.profiles.is_empty() {
+            return;
+        }
+        self.selected_index = if self.selected_index == 0 {
+            self.profiles.len() - 1
+        } else {
+            self.selected_index - 1
+        };
+    }
+
+    fn toggle_selected(&mut self) {
+        let Some(profile) = self.profiles.get(self.selected_index) else {
+            return;
+        };
+        if self.is_existing(&profile.id) {
+            self.message = Some("该 profile 本地已存在，导入会跳过".to_string());
+            return;
+        }
+        if !self.selected.remove(&profile.id) {
+            self.selected.insert(profile.id.clone());
+        }
+        self.message = None;
+    }
+
+    fn detail_lines(&self) -> Vec<Line<'static>> {
+        let Some(profile) = self.profiles.get(self.selected_index) else {
+            return vec![Line::from("暂无 profile")];
+        };
+
+        let existing_note = if self.is_existing(&profile.id) {
+            Some("本地已存在，将跳过")
+        } else {
+            None
+        };
+
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled("名称: ", Style::default().fg(Color::Yellow)),
+                Span::raw(profile.name.clone()),
+            ]),
+            Line::from(vec![
+                Span::styled("ID: ", Style::default().fg(Color::Yellow)),
+                Span::raw(profile.id.clone()),
+            ]),
+            Line::from(vec![
+                Span::styled("邮箱: ", Style::default().fg(Color::Yellow)),
+                Span::raw(profile.email.clone().unwrap_or_default()),
+            ]),
+            Line::from(""),
+            Line::from(format!("已选中: {} 个", self.selected.len())),
+        ];
+
+        if let Some(note) = existing_note {
+            lines.push(Line::from(vec![
+                Span::styled("状态: ", Style::default().fg(Color::Red)),
+                Span::raw(note),
+            ]));
+        }
+
+        if let Some(msg) = &self.message {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("提示: ", Style::default().fg(Color::Red)),
+                Span::raw(msg.clone()),
+            ]));
+        }
+        lines
+    }
+}
+
 impl ProfileSelectorState {
     fn new(profiles: Vec<ProfileSummary>) -> Self {
         let selected = profiles
@@ -544,7 +781,7 @@ mod tests {
 
     use crate::model::ProfileSummary;
 
-    use super::{DeleteConfirmState, DeleteSelectionState, ProfileSelectorState};
+    use super::{BackupSelectionState, DeleteConfirmState, DeleteSelectionState, ProfileSelectorState};
 
     #[test]
     fn selector_defaults_to_active_profile() {
@@ -685,5 +922,50 @@ mod tests {
 
         assert!(confirm.has_active_profile);
         assert!(confirm.confirmation_error().contains("当前激活的 profile 不允许删除"));
+    }
+
+    #[test]
+    fn backup_selector_marks_existing_profiles() {
+        use std::collections::HashSet;
+
+        let profiles = vec![
+            ProfileSummary {
+                id: "alice".to_string(),
+                name: "alice".to_string(),
+                email: None,
+                subscription_plan: None,
+                account_id: None,
+                plan_type: None,
+                primary: None,
+                secondary: None,
+                active: false,
+            },
+            ProfileSummary {
+                id: "bob".to_string(),
+                name: "bob".to_string(),
+                email: None,
+                subscription_plan: None,
+                account_id: None,
+                plan_type: None,
+                primary: None,
+                secondary: None,
+                active: false,
+            },
+        ];
+        let existing: HashSet<String> = ["bob".to_string()].into();
+        let mut state = BackupSelectionState::new(profiles, existing);
+
+        assert!(!state.is_existing("alice"));
+        assert!(state.is_existing("bob"));
+
+        // 可以选 alice
+        state.toggle_selected();
+        assert!(state.selected.contains("alice"));
+
+        // bob 已存在，toggle 不会选中，但会设置 message
+        state.next();
+        state.toggle_selected();
+        assert!(!state.selected.contains("bob"));
+        assert!(state.message.is_some());
     }
 }

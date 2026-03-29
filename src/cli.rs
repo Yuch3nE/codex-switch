@@ -32,6 +32,8 @@ pub enum ProfileCommand {
     Save { name: Option<String> },
     Use { name: Option<String> },
     Delete,
+    Backup,
+    Restore,
     Import { #[arg(long)] cpa: bool, path: String },
     List,
 }
@@ -79,6 +81,32 @@ mod tests {
             Command::Profile { command } => match command {
                 ProfileCommand::Delete => {}
                 _ => panic!("expected profile delete command"),
+            },
+            _ => panic!("expected profile command"),
+        }
+    }
+
+    #[test]
+    fn profile_backup_parses() {
+        let cli = Cli::try_parse_from(["codex-switch", "profile", "backup"]).unwrap();
+
+        match cli.command {
+            Command::Profile { command } => match command {
+                ProfileCommand::Backup => {}
+                _ => panic!("expected profile backup command"),
+            },
+            _ => panic!("expected profile command"),
+        }
+    }
+
+    #[test]
+    fn profile_restore_parses() {
+        let cli = Cli::try_parse_from(["codex-switch", "profile", "restore"]).unwrap();
+
+        match cli.command {
+            Command::Profile { command } => match command {
+                ProfileCommand::Restore => {}
+                _ => panic!("expected profile restore command"),
             },
             _ => panic!("expected profile command"),
         }

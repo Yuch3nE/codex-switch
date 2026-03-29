@@ -888,12 +888,18 @@ fn draw_config_editor(frame: &mut ratatui::Frame<'_>, state: &ConfigEditorState)
     let area = frame.area();
     frame.render_widget(Clear, area);
 
+    // 计算提示面板高度（hint 按 \n 分行 + 2 个边框行，最多 5 行）
+    let hint_text = state.hints.get(state.selected).copied().unwrap_or("");
+    let hint_lines_count = hint_text.split('\n').count();
+    let hint_height = (hint_lines_count as u16 + 2).min(5);
+
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Min(6),
-            Constraint::Length(3),
+            Constraint::Length(3),           // header
+            Constraint::Min(6),              // body: field list (2 rows per field)
+            Constraint::Length(hint_height), // hint panel
+            Constraint::Length(3),           // footer
         ])
         .split(area);
 
@@ -920,33 +926,52 @@ fn draw_config_editor(frame: &mut ratatui::Frame<'_>, state: &ConfigEditorState)
     .block(Block::default().borders(Borders::ALL));
     frame.render_widget(header, outer[0]);
 
-    // ── Body: 左侧字段列表 + 右侧详情/编辑 ────────────────────────────────────
-    let body = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(36), Constraint::Percentage(64)])
-        .split(outer[1]);
-
-    // Left: field list with label + short value
-    let max_label_width = state
-        .labels
-        .iter()
-        .map(|l| unicode_width::UnicodeWidthStr::width(*l))
-        .max()
-        .unwrap_or(0);
+    // ── Body: 全宽字段列表，每个字段占 2 行（字段名 + 输入值）─────────────────
     let mut list_state = ListState::default().with_selected(Some(state.selected));
     let items: Vec<ListItem<'_>> = state
         .labels
         .iter()
         .enumerate()
         .map(|(i, label)| {
-            let pad = max_label_width - unicode_width::UnicodeWidthStr::width(*label);
-            let (display, val_style) = state.list_display(i);
-            ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!("{}{}", label, " ".repeat(pad + 2)),
-                    Style::default().fg(Color::Yellow),
-                ),
-                Span::styled(display, val_style),
+            let is_selected = i == state.selected;
+
+            // 标签行样式
+            let label_style = if is_selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Yellow)
+            };
+
+            // 值行内容与样式
+            let (val_text, val_style) = if is_selected {
+                if let Some(buf) = &state.edit_buf {
+                    let masked = if state.sensitive[i] {
+                        "●".repeat(buf.len())
+                    } else {
+                        buf.clone()
+                    };
+                    (
+                        format!("> {}▌", masked),
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    let (d, s) = state.list_display(i);
+                    (format!("> {}", d), s)
+                }
+            } else {
+                state.list_display(i)
+            };
+
+            ListItem::new(ratatui::text::Text::from(vec![
+                Line::from(Span::styled(label.to_string(), label_style)),
+                Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(val_text, val_style),
+                ]),
             ]))
         })
         .collect();
@@ -954,74 +979,20 @@ fn draw_config_editor(frame: &mut ratatui::Frame<'_>, state: &ConfigEditorState)
     let list_title = format!("Fields ({}/{})", state.selected + 1, state.labels.len());
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(list_title))
-        .highlight_style(
-            Style::default()
-                .bg(Color::DarkGray)
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        )
+        // 仅设置背景色，保留各 span 的前景色
+        .highlight_style(Style::default().bg(Color::DarkGray))
         .highlight_symbol("▶ ");
-    frame.render_stateful_widget(list, body[0], &mut list_state);
+    frame.render_stateful_widget(list, outer[1], &mut list_state);
 
-    // Right: field detail + edit area
-    let label = state.labels[state.selected];
-    let hint = state.hints.get(state.selected).copied().unwrap_or("");
-
-    let mut right_lines: Vec<Line<'_>> = vec![
-        Line::from(vec![
-            Span::styled("字段  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                label,
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-            ),
-        ]),
-        Line::from(""),
-    ];
-
-    for hint_line in hint.split('\n') {
-        right_lines.push(Line::from(vec![Span::styled(
-            hint_line,
-            Style::default().fg(Color::Gray),
-        )]));
-    }
-
-    right_lines.push(Line::from(""));
-
-    if let Some(buf) = &state.edit_buf {
-        let masked = if state.sensitive[state.selected] {
-            "●".repeat(buf.len())
-        } else {
-            buf.clone()
-        };
-        right_lines.push(Line::from(vec![
-            Span::styled("> ", Style::default().fg(Color::Green)),
-            Span::styled(
-                format!("{}▌", masked),
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        right_lines.push(Line::from(""));
-        right_lines.push(Line::from(vec![Span::styled(
-            "Enter 确认  Tab 确认并下一项  Esc 放弃",
-            Style::default().fg(Color::DarkGray),
-        )]));
-    } else {
-        right_lines.push(Line::from(vec![
-            Span::styled("当前值  ", Style::default().fg(Color::DarkGray)),
-            state.detail_value_span(state.selected),
-        ]));
-        right_lines.push(Line::from(""));
-        right_lines.push(Line::from(vec![Span::styled(
-            "Enter 开始编辑",
-            Style::default().fg(Color::DarkGray),
-        )]));
-    }
-
-    let detail_title = if state.edit_buf.is_some() { "Edit" } else { "Detail" };
-    let detail = Paragraph::new(right_lines)
+    // ── Hint panel ────────────────────────────────────────────────────────────
+    let hint_content: Vec<Line<'_>> = hint_text
+        .split('\n')
+        .map(|l| Line::from(Span::styled(l.to_string(), Style::default().fg(Color::Gray))))
+        .collect();
+    let hint_widget = Paragraph::new(hint_content)
         .wrap(Wrap { trim: false })
-        .block(Block::default().borders(Borders::ALL).title(detail_title));
-    frame.render_widget(detail, body[1]);
+        .block(Block::default().borders(Borders::ALL).title("提示"));
+    frame.render_widget(hint_widget, outer[2]);
 
     // ── Footer ────────────────────────────────────────────────────────────────
     let (footer_text, footer_style) = match &state.message {
@@ -1033,7 +1004,7 @@ fn draw_config_editor(frame: &mut ratatui::Frame<'_>, state: &ConfigEditorState)
     };
     let footer = Paragraph::new(Line::from(vec![Span::styled(footer_text, footer_style)]))
         .block(Block::default().borders(Borders::ALL).title("Status"));
-    frame.render_widget(footer, outer[2]);
+    frame.render_widget(footer, outer[3]);
 
     frame.set_cursor_position((0, 0));
 }

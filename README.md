@@ -40,16 +40,17 @@
   - 只导入到 profiles，不会自动切换当前激活账号
 - `profile list`
   - 查看已保存 profile 列表
-- `profile backup`
-  - 通过 TUI 表单配置 WebDAV 连接（URL、用户名、密码、远端目录、保留数量、加密口令）
-  - 将所有 profiles 目录打包成 `.zip`（或 `.zip.enc` 加密包）上传到 WebDAV 服务器
-  - 自动按时间戳命名备份文件，可设置最大保留数量（超出时自动删除最旧的）
-  - 配置保存在 `~/.codex-auth-switch/backup.json`，下次调用直接复用
-- `profile restore`
-  - 通过 TUI 表单确认/修改 WebDAV 连接配置
-  - 从服务器列出可用备份文件，TUI 选择要恢复的版本
-  - 解压后以 TUI 多选形式选择要导入的 profile（已存在的 profile 会显示 ⚠ 提示并自动跳过）
-  - 如备份已加密但配置中无口令，弹出 TUI 口令输入框
+- `profile backup [--setup]`
+  - 已有配置时直接将所有 profiles 打包上传到 WebDAV 服务器
+  - 首次运行（或加 `--setup`）时打开 TUI 配置向导，填写连接信息后执行备份
+  - 支持 AES-256-GCM 加密，加密后备份文件后缀为 `.zip.enc`
+  - 自动按时间戳命名备份，可设置最大保留数量（超出时自动删除最旧的）
+  - 配置保存在 `~/.codex-auth-switch/backup.json`
+- `profile restore [--setup]`
+  - 已有配置时直接从 WebDAV 列出备份文件，TUI 选择后恢复
+  - 首次运行（或加 `--setup`）时先打开 TUI 配置向导
+  - 解压后以 TUI 多选形式选择要导入的 profile（已存在的 profile 标有 ⚠ 并跳过）
+  - 备份已加密但配置中无口令时，弹出 TUI 口令输入框
 
 ## 安装与运行
 
@@ -192,39 +193,55 @@ cargo run -- profile delete
 
 ### 7. 备份账号到 WebDAV
 
+直接备份（已有配置时）：
+
 ```bash
 cargo run -- profile backup
 ```
 
-首次运行会弹出 TUI 配置表单，填写 WebDAV 服务器信息：
+首次运行会弹出 TUI 配置向导，填写 WebDAV 服务器信息后自动执行备份。
+已有配置时直接上传，无需再次填写。
 
-- **WebDAV URL**：如 `https://your-server/dav/`
-- **用户名 / 密码**：WebDAV 鉴权凭据
-- **远端目录**：备份文件存放目录，默认 `codex-switch-backups/`
+重新修改配置：
+
+```bash
+cargo run -- profile backup --setup
+```
+
+配置字段说明：
+
+- **WebDAV URL**：服务器地址，需以 `/` 结尾（如 `https://your-server/dav/`）
+- **用户名 / 密码**：WebDAV 鉴权凭据（密码以 `●` 掩码显示）
+- **远端目录**：备份文件存放目录，默认 `codex-switch-backups/`（不含前导 `/`）
 - **最多备份数**：服务器端保留的最大备份数量（`0` 表示不限制，默认 `10`）
-- **加密口令**：可选；填写后备份文件会用 AES-256-GCM 加密，文件名后缀变为 `.zip.enc`
+- **加密口令**：可选；填写后备份文件用 AES-256-GCM 加密，后缀为 `.zip.enc`
 
-配置保存后会直接执行上传，后续调用直接复用，也可进入表单再次修改。
-
-TUI 表单操作：
+TUI 配置向导操作：
 
 - `↑/↓` 或 `j/k` 切换字段
-- `Enter` 开始编辑当前字段（密码字段以 `*` 掩码显示）
-- 编辑中 `Enter` 确认，`Esc` 放弃修改
-- `s` 保存并继续，`q`/`Esc`（非编辑模式）取消
+- `Enter` 开始编辑当前字段
+- 编辑中按 `Enter` 确认，`Tab` 确认并跳到下一项，`Esc` 放弃当次修改
+- `s` 保存全部并继续，`q`/`Esc`（非编辑模式）取消
 
 ### 8. 从备份恢复账号
+
+直接列出备份（已有配置时）：
 
 ```bash
 cargo run -- profile restore
 ```
 
-流程：
+重新修改配置后再恢复：
 
-1. TUI 表单确认/编辑 WebDAV 连接配置
-2. 从服务器拉取备份文件列表（按时间倒序），TUI 选择一个版本
-3. 若备份已加密且配置中无口令，弹出 TUI 口令输入框
-4. 解压后进入 TUI 多选界面：
+```bash
+cargo run -- profile restore --setup
+```
+
+恢复流程：
+
+1. 从服务器拉取备份文件列表（按时间倒序），TUI 选择一个版本
+2. 若备份已加密且配置中无口令，弹出 TUI 口令输入框
+3. 解压后进入 TUI 多选界面：
    - `Space` 勾选要导入的 profile
    - 标有 `⚠` 的 profile 在本地已存在，勾选后导入时会自动跳过（不覆盖）
    - `Enter` 确认导入，`q`/`Esc` 取消

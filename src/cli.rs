@@ -8,9 +8,12 @@ pub enum OutputFormat {
 
 #[derive(Debug, Parser)]
 #[command(name = "codex-switch")]
-#[command(about = "Inspect Codex account and local usage data")]
+#[command(about = "管理多个 Codex 账号 profile 并查看额度总览")]
+#[command(long_about = "管理多个 Codex 账号 profile 并查看额度总览。\n\n\
+    支持保存、切换、删除、导入 Codex 鉴权文件，\n\
+    以及通过 WebDAV 备份/恢复所有 profiles。")]
 pub struct Cli {
-    #[arg(long, value_enum, default_value = "text", global = true)]
+    #[arg(long, value_enum, default_value = "text", global = true, help = "输出格式")]
     pub format: OutputFormat,
 
     #[command(subcommand)]
@@ -19,8 +22,11 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// 显示当前激活账号的鉴权信息（邮箱、订阅方案、token 刷新时间）
     Account,
+    /// 显示所有已保存 profile 的额度快照表格（当前激活账号用实时数据）
     Usage,
+    /// 管理本地 Codex 账号 profiles
     Profile {
         #[command(subcommand)]
         command: ProfileCommand,
@@ -29,24 +35,39 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum ProfileCommand {
-    Save { name: Option<String> },
-    Use { name: Option<String> },
+    /// 将当前 ~/.codex/auth.json 保存为一个 profile（同时记录额度快照）
+    Save {
+        /// profile 显示名，省略时取邮箱 @ 前缀
+        name: Option<String>,
+    },
+    /// 切换到指定 profile；不传参数时进入 TUI 交互选择器
+    Use {
+        /// profile 显示名或 id；存在同名时自动进入 TUI 选择
+        name: Option<String>,
+    },
+    /// 进入 TUI 多选删除器（不允许删除当前激活的 profile）
     Delete,
-    /// 备份所有 profiles 到 WebDAV。首次需配置连接信息，后续直接备份。
-    /// 如需修改配置请加 --setup。
+    /// 备份所有 profiles 到 WebDAV（有配置时直接执行，--setup 可重新配置）
     Backup {
         /// 打开 TUI 配置向导（重新配置 WebDAV 连接信息）
         #[arg(long)]
         setup: bool,
     },
-    /// 从 WebDAV 备份文件恢复 profiles。首次需配置连接信息。
-    /// 如需修改配置请加 --setup。
+    /// 从 WebDAV 备份文件恢复 profiles（有配置时直接列出，--setup 可重新配置）
     Restore {
         /// 打开 TUI 配置向导（重新配置 WebDAV 连接信息）
         #[arg(long)]
         setup: bool,
     },
-    Import { #[arg(long)] cpa: bool, path: String },
+    /// 导入 auth.json 文件或目录（不自动切换当前激活账号）
+    Import {
+        /// 以 CPA 鉴权格式（而非标准 auth.json）解析并导入
+        #[arg(long)]
+        cpa: bool,
+        /// 要导入的文件路径或目录路径
+        path: String,
+    },
+    /// 列出所有已保存的 profile（名称、id、是否激活）
     List,
 }
 

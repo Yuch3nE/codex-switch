@@ -472,17 +472,21 @@ fn weekly_limit_for_plan<'a>(
     }
 }
 
+fn unknown_limit_pair() -> (String, String) {
+    ("未知".to_string(), "未知".to_string())
+}
+
 fn render_five_hour_limit(
     plan: Option<&str>,
     primary: Option<&PrimaryRateLimit>,
 ) -> (String, String) {
     if matches!(plan.unwrap_or_default().to_ascii_lowercase().as_str(), "free") {
-        return ("未知".to_string(), "未知".to_string());
+        return unknown_limit_pair();
     }
 
     match primary {
         Some(limit) => (limit.render_remaining_progress(), limit.render_reset_time()),
-        None => ("未知".to_string(), "未知".to_string()),
+        None => unknown_limit_pair(),
     }
 }
 
@@ -493,7 +497,7 @@ fn render_weekly_limit(
 ) -> (String, String) {
     match weekly_limit_for_plan(plan, primary, secondary) {
         Some(limit) => (limit.render_remaining_progress(), limit.render_reset_time()),
-        None => ("未知".to_string(), "未知".to_string()),
+        None => unknown_limit_pair(),
     }
 }
 

@@ -47,11 +47,7 @@ fn main() -> anyhow::Result<()> {
                             profiles: matches,
                         };
 
-                        if let Some(selected) = tui::select_profile(duplicate_output)? {
-                            profiles::use_profile(&paths.codex_home, &paths.switch_home, &selected.id)?
-                        } else {
-                            "已取消切换".to_string()
-                        }
+                        select_and_use_profile(&paths.codex_home, &paths.switch_home, duplicate_output)?
                     } else {
                         profiles::use_profile(&paths.codex_home, &paths.switch_home, &name)?
                     }
@@ -60,10 +56,8 @@ fn main() -> anyhow::Result<()> {
                     let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
                     if profiles.profiles.is_empty() {
                         "暂无 profiles，可先使用 profile save 保存当前账号".to_string()
-                    } else if let Some(selected) = tui::select_profile(profiles)? {
-                        profiles::use_profile(&paths.codex_home, &paths.switch_home, &selected.id)?
                     } else {
-                        "已取消切换".to_string()
+                        select_and_use_profile(&paths.codex_home, &paths.switch_home, profiles)?
                     }
                 }
             },
@@ -100,6 +94,18 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn select_and_use_profile(
+    codex_home: &std::path::Path,
+    switch_home: &std::path::Path,
+    candidates: model::ProfileListOutput,
+) -> anyhow::Result<String> {
+    if let Some(selected) = tui::select_profile(candidates)? {
+        profiles::use_profile(codex_home, switch_home, &selected.id)
+    } else {
+        Ok("已取消切换".to_string())
+    }
 }
 
 fn resolve_app_paths() -> anyhow::Result<AppPaths> {

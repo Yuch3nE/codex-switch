@@ -927,14 +927,19 @@ fn draw_config_editor(frame: &mut ratatui::Frame<'_>, state: &ConfigEditorState)
         .split(outer[1]);
 
     // Left: field list with label + short value
-    let max_label_len = state.labels.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let max_label_width = state
+        .labels
+        .iter()
+        .map(|l| unicode_width::UnicodeWidthStr::width(*l))
+        .max()
+        .unwrap_or(0);
     let mut list_state = ListState::default().with_selected(Some(state.selected));
     let items: Vec<ListItem<'_>> = state
         .labels
         .iter()
         .enumerate()
         .map(|(i, label)| {
-            let pad = max_label_len - label.chars().count();
+            let pad = max_label_width - unicode_width::UnicodeWidthStr::width(*label);
             let (display, val_style) = state.list_display(i);
             ListItem::new(Line::from(vec![
                 Span::styled(

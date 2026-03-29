@@ -24,7 +24,14 @@
 - `profile use [name|id]`
   - 切换到指定 profile
   - 如果不传参数，会进入交互式 TUI 选择器
+  - 如果传入的显示名存在多个同名项，交互终端中会自动进入 TUI 选择具体 profile
+  - 非交互环境遇到同名项时，需要显式传入 id
   - 切换前会先刷新当前激活账号的额度快照
+- `profile delete`
+  - 进入交互式 TUI 删除器
+  - 支持多选，按空格勾选、按 Enter 进入确认页
+  - 删除前必须再次确认
+  - 不允许删除当前激活的 profile，必须先切换到其他 profile
 - `profile import <path>`
   - 导入指定 `auth.json` 文件
   - 单文件导入时会自动识别标准 `auth.json` 或 CPA 鉴权文件
@@ -149,6 +156,30 @@ cargo run -- usage
 
 文本输出会按订阅方案分组，例如 `PRO`、`PLUS`、`TEAM`、`FREE`。
 
+表格会固定显示 6 列：`邮箱`、`订阅方案`、`5H额度`、`5H重置`、`周额度`、`周重置`。
+
+- `team`、`pro`、`plus` 会尽量同时展示 5 小时与周限额
+- `free` 主要展示周限额
+- 缺失的限额会显示为 `未知`
+- 重置时间按当前用户本地时区换算，但不显示时区后缀
+- 同一订阅分组内的账号行之间会有分隔线，分组边界也会更明显
+
+### 6. 删除账号
+
+进入交互式删除器：
+
+```bash
+cargo run -- profile delete
+```
+
+删除器交互说明：
+
+- `↑/↓` 或 `j/k` 移动
+- `Space` 勾选或取消勾选
+- `Enter` 进入确认页，再次 `Enter` 才会真正删除
+- `Esc` / `q` 退出
+- 当前激活的 profile 不允许删除
+
 JSON 输出：
 
 ```bash
@@ -203,9 +234,10 @@ cargo run -- usage --format json
 
 - 邮箱
 - 订阅方案
-- 剩余额度
-- 窗口周期
-- 重置时间
+- 5H额度
+- 5H重置
+- 周额度
+- 周重置
 
 当前激活账号会用 `●` 标记。
 
@@ -224,7 +256,7 @@ cargo test
 - `src/sessions.rs`: 扫描 `rollout-*.jsonl` 并汇总额度
 - `src/profiles.rs`: 管理 profile 的保存、切换、导入与快照
 - `src/model.rs`: 文本表格和 JSON 输出模型
-- `src/tui.rs`: `profile use` 的交互式全屏选择器
+- `src/tui.rs`: `profile use` / `profile delete` 的交互式全屏选择器
 - `src/main.rs`: CLI 命令分发入口
 
 测试位于 `tests/` 目录，均使用临时目录同时构造 `.codex` 与 `.codex-auth-switch` 数据，不依赖你机器上的真实账号环境。

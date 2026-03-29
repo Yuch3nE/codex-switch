@@ -36,12 +36,14 @@ pub fn save_profile(
     let profile_dir = profiles_root(switch_home).join(&profile_id);
     fs::create_dir_all(&profile_dir)?;
     fs::copy(&current_auth, profile_dir.join("auth.json"))?;
-    let primary = current_primary_snapshot(codex_home)?;
+    let usage = current_usage_snapshot(codex_home)?;
     write_profile_metadata(
         &profile_dir,
         &ProfileMetadata {
             name: display_name.clone(),
-            primary,
+            primary: usage.primary,
+            secondary: usage.secondary,
+            plan_type: usage.plan_type,
         },
     )?;
     write_state(
@@ -110,11 +112,37 @@ pub fn use_profile(codex_home: &Path, switch_home: &Path, name: &str) -> anyhow:
     ))
 }
 
+pub fn delete_profiles(switch_home: &Path, profile_ids: &[&str]) -> anyhow::Result<String> {
+    if profile_ids.is_empty() {
+        bail!("未选择要删除的 profile");
+    }
+
+    let state = read_state(switch_home)?;
+    if let Some(active_profile) = state.active_profile.as_deref() {
+        if profile_ids.iter().any(|profile_id| *profile_id == active_profile) {
+            bail!("当前激活的 profile 不允许删除，请先切换到其他 profile");
+        }
+    }
+
+    let mut deleted_ids = Vec::new();
+    for profile_id in profile_ids {
+        let resolved = resolve_profile(switch_home, profile_id)?;
+        fs::remove_dir_all(&resolved.path)?;
+        deleted_ids.push(resolved.id);
+    }
+
+    Ok(format!(
+        "已删除 {} 个 profile: {}",
+        deleted_ids.len(),
+        deleted_ids.join(", ")
+    ))
+}
+
 pub fn list_profiles(codex_home: &Path, switch_home: &Path) -> anyhow::Result<ProfileListOutput> {
     let root = profiles_root(switch_home);
     fs::create_dir_all(&root)?;
     let state = read_state(switch_home)?;
-    let active_primary = current_primary_snapshot(codex_home)?;
+    let active_usage = current_usage_snapshot(codex_home)?;
     let mut profiles = Vec::new();
 
     for entry in fs::read_dir(&root)? {
@@ -137,6 +165,8 @@ pub fn list_profiles(codex_home: &Path, switch_home: &Path) -> anyhow::Result<Pr
         let metadata = read_profile_metadata(&path)?.unwrap_or(ProfileMetadata {
             name: id.clone(),
             primary: None,
+            secondary: None,
+            plan_type: None,
         });
 
         let summary = auth::build_account_summary_from_path(&auth_path)
@@ -152,9 +182,19 @@ pub fn list_profiles(codex_home: &Path, switch_home: &Path) -> anyhow::Result<Pr
             subscription_plan: summary.subscription_plan,
             account_id: summary.account_id,
             primary: if is_active {
-                active_primary.clone().or(metadata.primary)
+                active_usage.primary.clone().or(metadata.primary)
             } else {
                 metadata.primary
+            },
+            secondary: if is_active {
+                active_usage.secondary.clone().or(metadata.secondary)
+            } else {
+                metadata.secondary
+            },
+            plan_type: if is_active {
+                active_usage.plan_type.clone().or(metadata.plan_type)
+            } else {
+                metadata.plan_type
             },
         });
     }
@@ -244,6 +284,8 @@ fn import_profile_from_path(
         &ProfileMetadata {
             name: display_name,
             primary: None,
+            secondary: None,
+            plan_type: None,
         },
     )
 }
@@ -419,6 +461,21 @@ fn write_profile_metadata(profile_dir: &Path, metadata: &ProfileMetadata) -> any
 
 fn resolve_profile(switch_home: &Path, selector: &str) -> anyhow::Result<ResolvedProfile> {
     let root = profiles_root(switch_home);
+    let direct_path = root.join(selector);
+    if direct_path.join("auth.json").exists() {
+        let metadata = read_profile_metadata(&direct_path)?.unwrap_or(ProfileMetadata {
+            name: selector.to_string(),
+            primary: None,
+            secondary: None,
+            plan_type: None,
+        });
+        return Ok(ResolvedProfile {
+            id: selector.to_string(),
+            name: metadata.name,
+            path: direct_path,
+        });
+    }
+
     let mut matches = Vec::new();
     if root.exists() {
         for entry in fs::read_dir(&root)? {
@@ -438,6 +495,8 @@ fn resolve_profile(switch_home: &Path, selector: &str) -> anyhow::Result<Resolve
             let metadata = read_profile_metadata(&path)?.unwrap_or(ProfileMetadata {
                 name: id.to_string(),
                 primary: None,
+                secondary: None,
+                plan_type: None,
             });
             if metadata.name == selector {
                 matches.push(ResolvedProfile {
@@ -455,19 +514,6 @@ fn resolve_profile(switch_home: &Path, selector: &str) -> anyhow::Result<Resolve
 
     if let Some(profile) = matches.pop() {
         return Ok(profile);
-    }
-
-    let direct_path = root.join(selector);
-    if direct_path.join("auth.json").exists() {
-        let metadata = read_profile_metadata(&direct_path)?.unwrap_or(ProfileMetadata {
-            name: selector.to_string(),
-            primary: None,
-        });
-        return Ok(ResolvedProfile {
-            id: selector.to_string(),
-            name: metadata.name,
-            path: direct_path,
-        });
     }
 
     bail!("profile 不存在: {selector}")
@@ -499,10 +545,26 @@ struct ProfileMetadata {
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     primary: Option<PrimaryRateLimit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    secondary: Option<PrimaryRateLimit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plan_type: Option<String>,
 }
 
-fn current_primary_snapshot(codex_home: &Path) -> anyhow::Result<Option<PrimaryRateLimit>> {
-    Ok(sessions::collect_usage(codex_home)?.primary)
+#[derive(Debug, Clone)]
+struct UsageLimitSnapshot {
+    primary: Option<PrimaryRateLimit>,
+    secondary: Option<PrimaryRateLimit>,
+    plan_type: Option<String>,
+}
+
+fn current_usage_snapshot(codex_home: &Path) -> anyhow::Result<UsageLimitSnapshot> {
+    let usage = sessions::collect_usage(codex_home)?;
+    Ok(UsageLimitSnapshot {
+        primary: usage.primary,
+        secondary: usage.secondary,
+        plan_type: usage.plan_type,
+    })
 }
 
 fn refresh_active_profile_snapshot(codex_home: &Path, switch_home: &Path) -> anyhow::Result<()> {
@@ -523,8 +585,13 @@ fn refresh_active_profile_snapshot(codex_home: &Path, switch_home: &Path) -> any
             .unwrap_or("profile")
             .to_string(),
         primary: None,
+        secondary: None,
+        plan_type: None,
     });
-    metadata.primary = current_primary_snapshot(codex_home)?;
+    let usage = current_usage_snapshot(codex_home)?;
+    metadata.primary = usage.primary;
+    metadata.secondary = usage.secondary;
+    metadata.plan_type = usage.plan_type;
     write_profile_metadata(&profile_dir, &metadata)
 }
 
@@ -532,4 +599,93 @@ struct ResolvedProfile {
     id: String,
     name: String,
     path: PathBuf,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::{delete_profiles, profiles_root, write_profile_metadata, write_state, ProfileMetadata, ProfilesState};
+
+    fn write_profile(root: &std::path::Path, id: &str, name: &str) {
+        let profile_dir = root.join(id);
+        fs::create_dir_all(&profile_dir).unwrap();
+        fs::write(profile_dir.join("auth.json"), "{}").unwrap();
+        write_profile_metadata(
+            &profile_dir,
+            &ProfileMetadata {
+                name: name.to_string(),
+                primary: None,
+                secondary: None,
+                plan_type: None,
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn delete_profiles_removes_multiple_profiles() {
+        let temp = tempdir().unwrap();
+        let switch_home = temp.path();
+        let root = profiles_root(switch_home);
+
+        write_profile(&root, "alpha", "alpha");
+        write_profile(&root, "beta", "beta");
+        write_profile(&root, "gamma", "gamma");
+        write_state(
+            switch_home,
+            &ProfilesState {
+                active_profile: Some("gamma".to_string()),
+            },
+        )
+        .unwrap();
+
+        let message = delete_profiles(switch_home, &["alpha", "beta"]).unwrap();
+
+        assert!(message.contains("已删除 2 个 profile"));
+        assert!(!root.join("alpha").exists());
+        assert!(!root.join("beta").exists());
+        assert!(root.join("gamma").exists());
+
+        let state: serde_json::Value = serde_json::from_slice(&fs::read(root.join("state.json")).unwrap()).unwrap();
+        assert_eq!(state.get("active_profile").and_then(serde_json::Value::as_str), Some("gamma"));
+    }
+
+    #[test]
+    fn delete_profiles_rejects_active_profile() {
+        let temp = tempdir().unwrap();
+        let switch_home = temp.path();
+        let root = profiles_root(switch_home);
+
+        write_profile(&root, "alpha", "alpha");
+        write_profile(&root, "beta", "beta");
+        write_state(
+            switch_home,
+            &ProfilesState {
+                active_profile: Some("alpha".to_string()),
+            },
+        )
+        .unwrap();
+
+        let error = delete_profiles(switch_home, &["alpha"]).unwrap_err();
+
+        assert!(error.to_string().contains("当前激活的 profile 不允许删除，请先切换到其他 profile"));
+        assert!(root.join("alpha").exists());
+    }
+
+    #[test]
+    fn resolve_profile_prefers_exact_id_before_duplicate_display_name() {
+        let temp = tempdir().unwrap();
+        let switch_home = temp.path();
+        let root = profiles_root(switch_home);
+
+        write_profile(&root, "ohanna27", "ohanna27");
+        write_profile(&root, "ohanna27-2", "ohanna27");
+
+        let resolved = super::resolve_profile(switch_home, "ohanna27").unwrap();
+
+        assert_eq!(resolved.id, "ohanna27");
+    }
 }

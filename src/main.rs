@@ -7,6 +7,7 @@ mod sessions;
 mod tui;
 
 use std::path::PathBuf;
+use std::io::IsTerminal;
 
 use anyhow::Context;
 use clap::Parser;
@@ -31,7 +32,29 @@ fn main() -> anyhow::Result<()> {
                 profiles::save_profile(&paths.codex_home, &paths.switch_home, name.as_deref())?
             }
             cli::ProfileCommand::Use { name } => match name {
-                Some(name) => profiles::use_profile(&paths.codex_home, &paths.switch_home, &name)?,
+                Some(name) => {
+                    let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
+                    let matches = matching_profiles_by_name(&profiles, &name);
+
+                    if matches.len() > 1 {
+                        if !std::io::stdout().is_terminal() {
+                            anyhow::bail!("存在多个同名 profile，请使用 id 切换: {name}");
+                        }
+
+                        let duplicate_output = model::ProfileListOutput {
+                            active_profile: profiles.active_profile.clone(),
+                            profiles: matches,
+                        };
+
+                        if let Some(selected) = tui::select_profile(duplicate_output)? {
+                            profiles::use_profile(&paths.codex_home, &paths.switch_home, &selected.id)?
+                        } else {
+                            "已取消切换".to_string()
+                        }
+                    } else {
+                        profiles::use_profile(&paths.codex_home, &paths.switch_home, &name)?
+                    }
+                }
                 None => {
                     let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
                     if profiles.profiles.is_empty() {
@@ -43,6 +66,17 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             },
+            cli::ProfileCommand::Delete => {
+                let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
+                if profiles.profiles.is_empty() {
+                    "暂无 profiles，可先使用 profile save 保存当前账号".to_string()
+                } else if let Some(selected) = tui::select_profiles_to_delete(profiles)? {
+                    let selected_ids = selected.iter().map(|profile| profile.id.as_str()).collect::<Vec<_>>();
+                    profiles::delete_profiles(&paths.switch_home, &selected_ids)?
+                } else {
+                    "已取消删除".to_string()
+                }
+            }
             cli::ProfileCommand::Import { path, cpa } => {
                 let import_path = PathBuf::from(path);
                 let format = if cpa {
@@ -75,6 +109,18 @@ fn resolve_app_paths() -> anyhow::Result<AppPaths> {
     })
 }
 
+fn matching_profiles_by_name(
+    profiles: &model::ProfileListOutput,
+    selector: &str,
+) -> Vec<model::ProfileSummary> {
+    profiles
+        .profiles
+        .iter()
+        .filter(|profile| profile.name == selector)
+        .cloned()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -85,7 +131,9 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::resolve_app_paths;
+    use crate::model::{ProfileListOutput, ProfileSummary};
+
+    use super::{matching_profiles_by_name, resolve_app_paths};
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -158,5 +206,42 @@ mod tests {
             resolved.switch_home,
             PathBuf::from(home.path()).join(".codex-auth-switch")
         );
+    }
+
+    #[test]
+    fn matching_profiles_by_name_returns_all_duplicate_display_names() {
+        let profiles = ProfileListOutput {
+            active_profile: Some("ohanna27".to_string()),
+            profiles: vec![
+                ProfileSummary {
+                    id: "ohanna27".to_string(),
+                    name: "ohanna27".to_string(),
+                    email: None,
+                    subscription_plan: None,
+                    account_id: None,
+                    plan_type: None,
+                    primary: None,
+                    secondary: None,
+                    active: true,
+                },
+                ProfileSummary {
+                    id: "ohanna27-2".to_string(),
+                    name: "ohanna27".to_string(),
+                    email: None,
+                    subscription_plan: None,
+                    account_id: None,
+                    plan_type: None,
+                    primary: None,
+                    secondary: None,
+                    active: false,
+                },
+            ],
+        };
+
+        let matches = matching_profiles_by_name(&profiles, "ohanna27");
+
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].id, "ohanna27");
+        assert_eq!(matches[1].id, "ohanna27-2");
     }
 }

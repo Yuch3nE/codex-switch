@@ -26,9 +26,9 @@ pub fn collect_usage(codex_home: &Path) -> anyhow::Result<UsageSummary> {
             usage.aggregate_tokens.accumulate(&snapshot.usage);
             usage.latest_session_file = Some(file.display().to_string());
             usage.latest_session_tokens = Some(snapshot.usage);
-            if snapshot.primary.is_some() {
-                usage.primary = snapshot.primary;
-            }
+            usage.primary = snapshot.primary;
+            usage.secondary = snapshot.secondary;
+            usage.plan_type = snapshot.plan_type;
         }
     }
 
@@ -92,6 +92,15 @@ fn last_token_usage(file: &Path) -> anyhow::Result<Option<TokenCountSnapshot>> {
                     .get("rate_limits")
                     .and_then(|value| value.get("primary"))
                     .map(parse_primary_rate_limit),
+                secondary: payload
+                    .get("rate_limits")
+                    .and_then(|value| value.get("secondary"))
+                    .map(parse_primary_rate_limit),
+                plan_type: payload
+                    .get("rate_limits")
+                    .and_then(|value| value.get("plan_type"))
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned),
             });
         }
     }
@@ -138,4 +147,6 @@ fn parse_primary_rate_limit(value: &Value) -> PrimaryRateLimit {
 struct TokenCountSnapshot {
     usage: TokenUsage,
     primary: Option<PrimaryRateLimit>,
+    secondary: Option<PrimaryRateLimit>,
+    plan_type: Option<String>,
 }

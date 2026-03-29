@@ -31,6 +31,7 @@ pub enum Command {
 pub enum ProfileCommand {
     Save { name: Option<String> },
     Use { name: Option<String> },
+    Delete,
     Import { #[arg(long)] cpa: bool, path: String },
     List,
 }
@@ -65,6 +66,19 @@ mod tests {
                     assert_eq!(path, "sample.json");
                 }
                 _ => panic!("expected profile import command"),
+            },
+            _ => panic!("expected profile command"),
+        }
+    }
+
+    #[test]
+    fn profile_delete_parses_without_arguments() {
+        let cli = Cli::try_parse_from(["codex-switch", "profile", "delete"]).unwrap();
+
+        match cli.command {
+            Command::Profile { command } => match command {
+                ProfileCommand::Delete => {}
+                _ => panic!("expected profile delete command"),
             },
             _ => panic!("expected profile command"),
         }

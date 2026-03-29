@@ -80,6 +80,10 @@ pub struct UsageSummary {
     pub latest_session_tokens: Option<TokenUsage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary: Option<PrimaryRateLimit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secondary: Option<PrimaryRateLimit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_type: Option<String>,
 }
 
 impl UsageSummary {
@@ -91,6 +95,8 @@ impl UsageSummary {
             latest_session_file: None,
             latest_session_tokens: None,
             primary: None,
+            secondary: None,
+            plan_type: None,
         }
     }
 }
@@ -108,17 +114,19 @@ impl UsageTableOutput {
             .map(|profile| UsageTableRow {
                 email: profile.email,
                 subscription_plan: profile.subscription_plan,
+                plan_type: profile.plan_type,
                 primary: profile.primary,
+                secondary: profile.secondary,
                 active: profile.active,
             })
             .collect::<Vec<_>>();
 
         rows.sort_by(|left, right| {
-            usage_plan_rank(left.subscription_plan.as_deref())
-                .cmp(&usage_plan_rank(right.subscription_plan.as_deref()))
+            usage_plan_rank(effective_plan(left.plan_type.as_deref(), left.subscription_plan.as_deref()))
+                .cmp(&usage_plan_rank(effective_plan(right.plan_type.as_deref(), right.subscription_plan.as_deref())))
                 .then_with(|| {
-                    remaining_percent(right.primary.as_ref())
-                        .partial_cmp(&remaining_percent(left.primary.as_ref()))
+                    usage_sort_remaining(right)
+                        .partial_cmp(&usage_sort_remaining(left))
                         .unwrap_or(Ordering::Equal)
                 })
                 .then_with(|| left.email.cmp(&right.email))
@@ -139,31 +147,26 @@ impl UsageTableOutput {
             return "暂无已保存账号，可先执行 profile save".to_string();
         }
 
-        let headers = ["邮箱", "订阅方案", "剩余额度", "窗口周期", "重置时间"];
-        let mut rows: Vec<(String, [String; 5])> = self
+        let headers = ["邮箱", "订阅方案", "5H额度", "5H重置", "周额度", "周重置"];
+        let mut rows: Vec<(String, [String; 6])> = self
             .profiles
             .iter()
             .map(|profile| {
+                let plan = effective_plan(
+                    profile.plan_type.as_deref(),
+                    profile.subscription_plan.as_deref(),
+                );
+                let five_hour = render_five_hour_limit(plan, profile.primary.as_ref());
+                let weekly = render_weekly_limit(plan, profile.primary.as_ref(), profile.secondary.as_ref());
                 (
-                    usage_plan_label(profile.subscription_plan.as_deref()),
+                    usage_plan_label(plan),
                     [
                         render_active_email(profile.active, profile.email.as_deref()),
-                        profile.subscription_plan.clone().unwrap_or_default(),
-                        profile
-                            .primary
-                            .as_ref()
-                            .map(PrimaryRateLimit::render_remaining_progress)
-                            .unwrap_or_else(|| "╢░░░░░░░░░░░░░░░░░░░░╟ 0.0%".to_string()),
-                        profile
-                            .primary
-                            .as_ref()
-                            .map(PrimaryRateLimit::render_window_days)
-                            .unwrap_or_default(),
-                        profile
-                            .primary
-                            .as_ref()
-                            .map(PrimaryRateLimit::render_reset_time)
-                            .unwrap_or_default(),
+                        usage_plan_label(plan),
+                        five_hour.0,
+                        five_hour.1,
+                        weekly.0,
+                        weekly.1,
                     ],
                 )
             })
@@ -171,7 +174,7 @@ impl UsageTableOutput {
 
         adapt_grouped_email_column(&mut rows);
 
-        let mut widths = [0usize; 5];
+        let mut widths = [0usize; 6];
         for (index, header) in headers.iter().enumerate() {
             widths[index] = display_width(header);
         }
@@ -191,7 +194,7 @@ impl UsageTableOutput {
 
             if starts_group {
                 lines.push(colorize_group_heading(&format!("├─ {}", group)));
-                lines.push(render_table_rule('├', '┬', '┤', &widths));
+                lines.push(render_emphasized_table_rule('╞', '╪', '╡', &widths));
                 lines.push(render_table_row(&header_row, &widths, true));
                 lines.push(render_table_rule('├', '┼', '┤', &widths));
             }
@@ -199,7 +202,9 @@ impl UsageTableOutput {
             lines.push(render_table_row(row, &widths, false));
 
             if ends_group {
-                lines.push(render_table_rule('╰', '┴', '╯', &widths));
+                lines.push(render_emphasized_table_rule('╘', '╧', '╛', &widths));
+            } else {
+                lines.push(render_table_rule('├', '┼', '┤', &widths));
             }
         }
         lines.join("\n")
@@ -213,7 +218,11 @@ pub struct UsageTableRow {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_plan: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub primary: Option<PrimaryRateLimit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secondary: Option<PrimaryRateLimit>,
     pub active: bool,
 }
 
@@ -241,25 +250,9 @@ impl PrimaryRateLimit {
         )
     }
 
-    pub fn render_window_days(&self) -> String {
-        let days = self.window_minutes as f64 / 1440.0;
-        if (days - days.round()).abs() < f64::EPSILON {
-            format!("{} 天", days.round() as i64)
-        } else {
-            format!("{days:.1} 天")
-        }
-    }
-
     pub fn render_reset_time(&self) -> String {
         match Local.timestamp_opt(self.resets_at as i64, 0).single() {
-            Some(value) => {
-                let zone = match value.offset().local_minus_utc() {
-                    28_800 => "CST".to_string(),
-                    0 => "UTC".to_string(),
-                    _ => value.format("%:z").to_string(),
-                };
-                format!("{} {}", value.format("%Y-%m-%d %H:%M:%S"), zone)
-            }
+            Some(value) => value.format("%Y-%m-%d %H:%M:%S").to_string(),
             None => self.resets_at.to_string(),
         }
     }
@@ -276,16 +269,35 @@ fn render_panel(title: &str, rows: &[String]) -> String {
     lines.join("\n")
 }
 
-fn render_table_rule(left: char, middle: char, right: char, widths: &[usize; 5]) -> String {
+fn render_table_rule(left: char, middle: char, right: char, widths: &[usize; 6]) -> String {
+    render_table_rule_with_fill(left, middle, right, widths, '─')
+}
+
+fn render_emphasized_table_rule(
+    left: char,
+    middle: char,
+    right: char,
+    widths: &[usize; 6],
+) -> String {
+    render_table_rule_with_fill(left, middle, right, widths, '═')
+}
+
+fn render_table_rule_with_fill(
+    left: char,
+    middle: char,
+    right: char,
+    widths: &[usize; 6],
+    fill: char,
+) -> String {
     let separator = middle.to_string();
     let segments = widths
         .iter()
-        .map(|width| "─".repeat(*width + 2))
+        .map(|width| fill.to_string().repeat(*width + 2))
         .collect::<Vec<_>>();
     colorize_border(&format!("{}{}{}", left, segments.join(&separator), right))
 }
 
-fn render_table_row(values: &[String; 5], widths: &[usize; 5], is_header: bool) -> String {
+fn render_table_row(values: &[String; 6], widths: &[usize; 6], is_header: bool) -> String {
     let separator = colorize_border("│");
     let rendered = values
         .iter()
@@ -305,7 +317,7 @@ fn render_table_row(values: &[String; 5], widths: &[usize; 5], is_header: bool) 
     format!("{}{}{}", separator, rendered, colorize_border("│"))
 }
 
-fn adapt_grouped_email_column(rows: &mut [(String, [String; 5])]) {
+fn adapt_grouped_email_column(rows: &mut [(String, [String; 6])]) {
     let Some(terminal_width) = terminal_width() else {
         return;
     };
@@ -451,10 +463,58 @@ fn render_active_email(active: bool, email: Option<&str>) -> String {
     }
 }
 
-fn remaining_percent(primary: Option<&PrimaryRateLimit>) -> f64 {
-    primary
-        .map(|value| 100.0 - value.used_percent)
-        .unwrap_or(0.0)
+fn effective_plan<'a>(
+    plan_type: Option<&'a str>,
+    subscription_plan: Option<&'a str>,
+) -> Option<&'a str> {
+    plan_type.or(subscription_plan)
+}
+
+fn usage_sort_remaining(row: &UsageTableRow) -> f64 {
+    weekly_limit_for_plan(
+        effective_plan(row.plan_type.as_deref(), row.subscription_plan.as_deref()),
+        row.primary.as_ref(),
+        row.secondary.as_ref(),
+    )
+    .or(row.primary.as_ref())
+    .map(|value| 100.0 - value.used_percent)
+    .unwrap_or(0.0)
+}
+
+fn weekly_limit_for_plan<'a>(
+    plan: Option<&str>,
+    primary: Option<&'a PrimaryRateLimit>,
+    secondary: Option<&'a PrimaryRateLimit>,
+) -> Option<&'a PrimaryRateLimit> {
+    match plan.unwrap_or_default().to_ascii_lowercase().as_str() {
+        "free" => secondary.or(primary),
+        _ => secondary,
+    }
+}
+
+fn render_five_hour_limit(
+    plan: Option<&str>,
+    primary: Option<&PrimaryRateLimit>,
+) -> (String, String) {
+    if matches!(plan.unwrap_or_default().to_ascii_lowercase().as_str(), "free") {
+        return ("未知".to_string(), "未知".to_string());
+    }
+
+    match primary {
+        Some(limit) => (limit.render_remaining_progress(), limit.render_reset_time()),
+        None => ("未知".to_string(), "未知".to_string()),
+    }
+}
+
+fn render_weekly_limit(
+    plan: Option<&str>,
+    primary: Option<&PrimaryRateLimit>,
+    secondary: Option<&PrimaryRateLimit>,
+) -> (String, String) {
+    match weekly_limit_for_plan(plan, primary, secondary) {
+        Some(limit) => (limit.render_remaining_progress(), limit.render_reset_time()),
+        None => ("未知".to_string(), "未知".to_string()),
+    }
 }
 
 fn usage_plan_rank(plan: Option<&str>) -> usize {
@@ -488,7 +548,11 @@ pub struct ProfileSummary {
     pub subscription_plan: Option<String>,
     pub account_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub primary: Option<PrimaryRateLimit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secondary: Option<PrimaryRateLimit>,
     pub active: bool,
 }
 

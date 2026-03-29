@@ -32,6 +32,26 @@ fn rollout_with_primary(used_percent: f64, window_minutes: u64, resets_at: u64) 
     )
 }
 
+fn assert_auth_json_layout_matches_project_sample(contents: &str) {
+    let auth_mode_index = contents.find("\"auth_mode\"").unwrap();
+    let openai_api_key_index = contents.find("\"OPENAI_API_KEY\"").unwrap();
+    let tokens_index = contents.find("\"tokens\"").unwrap();
+    let last_refresh_index = contents.find("\"last_refresh\"").unwrap();
+
+    assert!(auth_mode_index < openai_api_key_index);
+    assert!(openai_api_key_index < tokens_index);
+    assert!(tokens_index < last_refresh_index);
+
+    let id_token_index = contents.find("\"id_token\"").unwrap();
+    let access_token_index = contents.find("\"access_token\"").unwrap();
+    let refresh_token_index = contents.find("\"refresh_token\"").unwrap();
+    let account_id_index = contents.find("\"account_id\"").unwrap();
+
+    assert!(id_token_index < access_token_index);
+    assert!(access_token_index < refresh_token_index);
+    assert!(refresh_token_index < account_id_index);
+}
+
 #[test]
 fn profile_save_and_use_switches_auth_file() {
     let temp = tempdir().unwrap();
@@ -433,6 +453,8 @@ fn profile_import_cpa_file_normalizes_into_standard_auth_json() {
     let value: Value = serde_json::from_str(&normalized_auth).unwrap();
 
     assert_eq!(value.get("auth_mode").and_then(Value::as_str), Some("chatgpt"));
+    assert!(value.get("OPENAI_API_KEY").is_some());
+    assert!(value.get("OPENAI_API_KEY").unwrap().is_null());
     assert_eq!(value.get("last_refresh").and_then(Value::as_str), Some("2026-03-28T00:28:17+08:00"));
     assert_eq!(
         value
@@ -450,6 +472,7 @@ fn profile_import_cpa_file_normalizes_into_standard_auth_json() {
     );
     assert!(value.get("refresh_token").is_none());
     assert!(value.get("access_token").is_none());
+    assert_auth_json_layout_matches_project_sample(&normalized_auth);
 }
 
 #[test]
@@ -519,6 +542,8 @@ fn profile_use_writes_standard_auth_json_after_cpa_import() {
     let value: Value = serde_json::from_str(&current_auth).unwrap();
 
     assert_eq!(value.get("auth_mode").and_then(Value::as_str), Some("chatgpt"));
+    assert!(value.get("OPENAI_API_KEY").is_some());
+    assert!(value.get("OPENAI_API_KEY").unwrap().is_null());
     assert!(value.get("tokens").is_some());
     assert_eq!(
         value
@@ -528,6 +553,7 @@ fn profile_use_writes_standard_auth_json_after_cpa_import() {
         Some("rt_example")
     );
     assert!(value.get("refresh_token").is_none());
+    assert_auth_json_layout_matches_project_sample(&current_auth);
 }
 
 #[test]

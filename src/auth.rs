@@ -8,6 +8,8 @@ use crate::{jwt, model::AccountSummary};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AuthFile {
     pub auth_mode: String,
+    #[serde(rename = "OPENAI_API_KEY", default = "null_json_value")]
+    pub openai_api_key: Value,
     pub tokens: AuthTokens,
     #[serde(default, rename = "refresh_token", skip_serializing)]
     pub(crate) legacy_refresh_token: Option<String>,
@@ -36,6 +38,12 @@ pub fn build_account_summary_from_path(path: &Path) -> anyhow::Result<AccountSum
 
 pub fn load_auth_file(path: &Path) -> anyhow::Result<AuthFile> {
     Ok(canonicalize_auth_file(serde_json::from_slice(&fs::read(path)?)?))
+}
+
+pub fn write_auth_file(path: &Path, auth_file: &AuthFile) -> anyhow::Result<()> {
+    let auth_file = canonicalize_auth_file(auth_file.clone());
+    fs::write(path, serde_json::to_vec_pretty(&auth_file)?)?;
+    Ok(())
 }
 
 pub fn build_account_summary_from_auth_file(auth_file: AuthFile) -> anyhow::Result<AccountSummary> {
@@ -89,6 +97,10 @@ pub fn canonicalize_auth_file(mut auth_file: AuthFile) -> AuthFile {
     }
 
     auth_file
+}
+
+fn null_json_value() -> Value {
+    Value::Null
 }
 
 fn extract_string(value: Option<&Value>, key: &str) -> Option<String> {

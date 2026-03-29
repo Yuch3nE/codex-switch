@@ -1,334 +1,207 @@
 # codex-switch
 
-一个用 Rust 写的 Codex 账号切换与额度查看工具。
+管理多个 Codex 账号，一键切换，随时查看所有账号额度。
 
-当前版本聚焦两件事：
+## 功能
 
-- 管理多个 Codex 账号 profile
-- 以静态 TUI 风格查看多账号额度总览
+| 命令 | 功能 |
+|------|------|
+| `codex-switch account` | 查看当前登录账号信息 |
+| `codex-switch usage` | 查看所有账号额度总览 |
+| `codex-switch profile save` | 保存当前账号 |
+| `codex-switch profile use` | 切换账号（TUI 交互或直接指定名称） |
+| `codex-switch profile list` | 列出所有已保存账号 |
+| `codex-switch profile delete` | 删除账号（TUI 多选） |
+| `codex-switch profile import` | 导入 auth.json 文件 |
+| `codex-switch profile backup` | 备份所有账号到 WebDAV |
+| `codex-switch profile restore` | 从 WebDAV 恢复账号 |
 
-## 当前能力
-
-- `account`
-  - 读取 `~/.codex/auth.json`
-  - 解析 JWT，显示当前账号邮箱、订阅信息和最后刷新时间
-- `usage`
-  - 读取已保存的 profile
-  - 按订阅方案分组展示账号额度表
-  - 组内按剩余额度从高到低排序
-  - 当前激活账号会额外高亮
-- `profile save [name]`
-  - 把当前 `~/.codex/auth.json` 纳入管理
-  - 同时保存当前账号的额度快照
-  - `name` 可省略，默认取邮箱 `@` 前面的部分
-- `profile use [name|id]`
-  - 切换到指定 profile
-  - 如果不传参数，会进入交互式 TUI 选择器
-  - 如果传入的显示名存在多个同名项，交互终端中会自动进入 TUI 选择具体 profile
-  - 非交互环境遇到同名项时，需要显式传入 id
-  - 切换前会先刷新当前激活账号的额度快照
-- `profile delete`
-  - 进入交互式 TUI 删除器
-  - 支持多选，按空格勾选、按 Enter 进入确认页
-  - 删除前必须再次确认
-  - 不允许删除当前激活的 profile，必须先切换到其他 profile
-- `profile import <path>`
-  - 导入指定 `auth.json` 文件
-  - 单文件导入时会自动识别标准 `auth.json` 或 CPA 鉴权文件
-  - 或递归导入某个目录树下的所有 `auth.json`
-  - 支持 `--cpa` 导入 CPA 格式鉴权文件，并在导入时转成标准 `auth.json`
-  - 只导入到 profiles，不会自动切换当前激活账号
-- `profile list`
-  - 查看已保存 profile 列表
-- `profile backup [--setup]`
-  - 已有配置时直接将所有 profiles 打包上传到 WebDAV 服务器
-  - 首次运行（或加 `--setup`）时打开 TUI 配置向导，填写连接信息后执行备份
-  - 支持 AES-256-GCM 加密，加密后备份文件后缀为 `.zip.enc`
-  - 自动按时间戳命名备份，可设置最大保留数量（超出时自动删除最旧的）
-  - 配置保存在 `~/.codex-auth-switch/backup.json`
-- `profile restore [--setup]`
-  - 已有配置时直接从 WebDAV 列出备份文件，TUI 选择后恢复
-  - 首次运行（或加 `--setup`）时先打开 TUI 配置向导
-  - 解压后以 TUI 多选形式选择要导入的 profile（已存在的 profile 标有 ⚠ 并跳过）
-  - 备份已加密但配置中无口令时，弹出 TUI 口令输入框
-
-## 安装与运行
-
-```bash
-cargo build
-cargo run -- --help
-cargo run -- usage
-cargo run -- profile list
-```
-
-安装到本机：
+## 安装
 
 ```bash
 cargo install --path .
-codex-switch --help
 ```
 
-程序固定使用两个目录：
-
-- `~/.codex`：真实 Codex 的 `auth.json` 和 `sessions`
-- `~/.codex-auth-switch`：codex-switch 自己管理的 `profiles`、`state.json` 和 `rollback`
+或直接编译：
 
 ```bash
-cargo run -- usage
+cargo build --release
+# 产物: target/release/codex-switch
 ```
 
-如果你想在仓库内构造一套测试数据，可以直接把仓库根目录当作 `HOME`，程序会在里面使用 `.codex/` 和 `.codex-auth-switch/`：
+## 快速开始
 
 ```bash
-HOME=$PWD cargo run -- usage
+# 保存当前账号
+codex-switch profile save
+
+# 查看所有账号额度
+codex-switch usage
+
+# 交互式切换账号
+codex-switch profile use
 ```
 
-## 常用工作流
+## 使用指南
 
-### 1. 保存当前账号
+### 查看当前账号
 
 ```bash
-cargo run -- profile save
+codex-switch account
 ```
 
-或手动指定名字：
+显示当前 `~/.codex/auth.json` 对应的邮箱、订阅方案和 token 刷新时间。
+
+### 查看所有账号额度
 
 ```bash
-cargo run -- profile save work
+codex-switch usage
 ```
 
-### 2. 列出已保存账号
+按订阅方案分组展示所有已保存账号的额度快照。当前激活账号会用 `●` 标记，并优先显示实时数据。
+
+支持 JSON 格式输出：
 
 ```bash
-cargo run -- profile list
+codex-switch usage --format json
 ```
 
-### 3. 导入外部 auth.json
-
-导入单个文件：
+### 保存账号
 
 ```bash
-cargo run -- profile import /path/to/auth.json
+# 自动以邮箱前缀命名
+codex-switch profile save
+
+# 自定义名称
+codex-switch profile save work
 ```
 
-如果单文件实际是 CPA 格式，也可以直接这样导入，程序会自动识别并转成标准 `auth.json`：
+### 切换账号
 
 ```bash
-cargo run -- profile import /path/to/cpa.json
+# TUI 交互选择
+codex-switch profile use
+
+# 直接指定名称
+codex-switch profile use work
 ```
 
-递归导入目录中的所有 `auth.json`：
+切换时会自动刷新当前账号的额度快照，再执行切换。
+
+### 列出所有账号
 
 ```bash
-cargo run -- profile import /path/to/folder
+codex-switch profile list
 ```
 
-导入 CPA 格式鉴权文件：
+### 删除账号
 
 ```bash
-cargo run -- profile import --cpa /path/to/cpa.json
+codex-switch profile delete
 ```
 
-递归导入目录中的所有 CPA `.json` 文件：
+进入 TUI 多选界面：`Space` 勾选，`Enter` 确认，`Esc`/`q` 退出。  
+无法删除当前激活的账号，需先切换到其他账号。
+
+### 导入账号
 
 ```bash
-cargo run -- profile import --cpa /path/to/folder
+# 导入单个 auth.json（自动识别标准格式或 CPA 格式）
+codex-switch profile import /path/to/auth.json
+
+# 递归导入目录中所有 auth.json
+codex-switch profile import /path/to/folder
+
+# 导入 CPA 格式鉴权文件
+codex-switch profile import --cpa /path/to/cpa.json
+
+# 递归导入目录中所有 CPA .json 文件
+codex-switch profile import --cpa /path/to/folder
 ```
 
-导入行为说明：
+导入只写入到 profiles，不切换当前激活账号。
 
-- 如果传入的是文件，就按单文件导入
-- 单文件导入时会自动识别标准 `auth.json` 与 CPA 鉴权文件
-- 如果传入的是目录，就递归扫描目录树中的所有 `auth.json`
-- 如果传入 `--cpa`，单文件按 CPA JSON 导入，目录则递归扫描所有 `.json`
-- `--cpa` 导入时会在 profile 中直接落成标准 `auth.json`
-- 导入不会自动切换当前激活 profile
-- 导入得到的 profile 默认使用邮箱前缀作为显示名，内部 id 会自动去重
-
-### 4. 切换账号
-
-直接指定：
+### 备份到 WebDAV
 
 ```bash
-cargo run -- profile use work
+# 有配置时直接备份；首次运行会弹出配置向导
+codex-switch profile backup
+
+# 修改 WebDAV 配置后再备份
+codex-switch profile backup --setup
 ```
 
-进入交互式选择器：
+配置向导字段：
+
+| 字段 | 说明 |
+|------|------|
+| WebDAV URL | 服务器地址，需以 `/` 结尾 |
+| 用户名 / 密码 | WebDAV 鉴权凭据（密码以 `●` 掩码显示） |
+| 远端目录 | 备份存放目录，默认 `codex-switch-backups/`（不含前导 `/`） |
+| 最多备份数 | 服务器保留的最大备份数，`0` 不限制，默认 `10` |
+| 加密口令 | 可选；填写后用 AES-256-GCM 加密，文件后缀改为 `.zip.enc` |
+
+配置向导操作：`↑/↓` 切换字段，`Enter` 编辑，`Tab` 确认并跳下一项，`s` 保存，`Esc`/`q` 取消。
+
+配置保存在 `~/.codex-auth-switch/backup.json`，后续直接复用。
+
+### 从 WebDAV 恢复
 
 ```bash
-cargo run -- profile use
-```
+# 有配置时直接列出备份；首次运行会弹出配置向导
+codex-switch profile restore
 
-### 5. 查看多账号额度
-
-```bash
-cargo run -- usage
-```
-
-文本输出会按订阅方案分组，例如 `PRO`、`PLUS`、`TEAM`、`FREE`。
-
-表格会固定显示 6 列：`邮箱`、`订阅方案`、`5H额度`、`5H重置`、`周额度`、`周重置`。
-
-- `team`、`pro`、`plus` 会尽量同时展示 5 小时与周限额
-- `free` 主要展示周限额
-- 缺失的限额会显示为 `未知`
-- 重置时间按当前用户本地时区换算，但不显示时区后缀
-- 同一订阅分组内的账号行之间会有分隔线，分组边界也会更明显
-
-### 6. 删除账号
-
-进入交互式删除器：
-
-```bash
-cargo run -- profile delete
-```
-
-删除器交互说明：
-
-- `↑/↓` 或 `j/k` 移动
-- `Space` 勾选或取消勾选
-- `Enter` 进入确认页，再次 `Enter` 才会真正删除
-- `Esc` / `q` 退出
-- 当前激活的 profile 不允许删除
-
-### 7. 备份账号到 WebDAV
-
-直接备份（已有配置时）：
-
-```bash
-cargo run -- profile backup
-```
-
-首次运行会弹出 TUI 配置向导，填写 WebDAV 服务器信息后自动执行备份。
-已有配置时直接上传，无需再次填写。
-
-重新修改配置：
-
-```bash
-cargo run -- profile backup --setup
-```
-
-配置字段说明：
-
-- **WebDAV URL**：服务器地址，需以 `/` 结尾（如 `https://your-server/dav/`）
-- **用户名 / 密码**：WebDAV 鉴权凭据（密码以 `●` 掩码显示）
-- **远端目录**：备份文件存放目录，默认 `codex-switch-backups/`（不含前导 `/`）
-- **最多备份数**：服务器端保留的最大备份数量（`0` 表示不限制，默认 `10`）
-- **加密口令**：可选；填写后备份文件用 AES-256-GCM 加密，后缀为 `.zip.enc`
-
-TUI 配置向导操作：
-
-- `↑/↓` 或 `j/k` 切换字段
-- `Enter` 开始编辑当前字段
-- 编辑中按 `Enter` 确认，`Tab` 确认并跳到下一项，`Esc` 放弃当次修改
-- `s` 保存全部并继续，`q`/`Esc`（非编辑模式）取消
-
-### 8. 从备份恢复账号
-
-直接列出备份（已有配置时）：
-
-```bash
-cargo run -- profile restore
-```
-
-重新修改配置后再恢复：
-
-```bash
-cargo run -- profile restore --setup
+# 修改配置后再恢复
+codex-switch profile restore --setup
 ```
 
 恢复流程：
+1. 从服务器拉取备份列表（按时间倒序），TUI 选择版本
+2. 解压后进入 TUI 多选：`Space` 勾选，`Enter` 确认，`Esc`/`q` 取消
+3. 标有 `⚠` 的账号在本地已存在，导入时自动跳过（不覆盖）
 
-1. 从服务器拉取备份文件列表（按时间倒序），TUI 选择一个版本
-2. 若备份已加密且配置中无口令，弹出 TUI 口令输入框
-3. 解压后进入 TUI 多选界面：
-   - `Space` 勾选要导入的 profile
-   - 标有 `⚠` 的 profile 在本地已存在，勾选后导入时会自动跳过（不覆盖）
-   - `Enter` 确认导入，`q`/`Esc` 取消
+如果备份已加密且配置无口令，会弹出口令输入框。
 
-JSON 输出：
+## 目录结构
 
-```bash
-cargo run -- usage --format json
+```
+~/.codex/                    # Codex 原始数据
+    auth.json                # 当前激活账号凭据
+    sessions/                # 实时额度数据
+
+~/.codex-auth-switch/        # codex-switch 管理数据
+    profiles/                # 已保存的所有账号
+    state.json               # 当前激活账号记录
+    rollback/                # 切换前的凭据备份
+    backup.json              # WebDAV 备份配置
 ```
 
-## 额度刷新逻辑
+## 额度说明
 
-这是当前版本最重要的行为约束。
+`usage` 展示规则：
+- **当前激活账号**：优先读取 `~/.codex/sessions` 实时数据，无则回退到快照
+- **其他账号**：显示上次 `save` 或 `use` 时同步的快照
 
-### 实时额度来源
-
-`~/.codex/sessions` 中的额度信息，只能代表当前 `~/.codex/auth.json` 对应的那个账号。
-
-换句话说：
-
-- `sessions` 不是一个“所有账号共享的额度仓库”
-- 它只能作为“当前激活账号”的实时额度源
-
-### 快照写入规则
-
-- `profile save` 时，会把当前账号的实时额度一起写进该 profile 的快照
-- `profile import` 时，只导入认证信息，不会伪造额度快照
-- `profile import --cpa` 时，会先把 CPA 鉴权文件转成标准 `auth.json` 再保存
-- `profile use` 时，会在切走前先把当前激活账号的额度快照刷新一次
-
-### usage 展示规则
-
-- 当前激活账号：优先显示当前 `sessions` 的实时额度
-- 如果当前激活账号没有实时会话数据：回退到该 profile 上次保存的额度快照
-- 非激活账号：只显示各自 profile 内最后一次同步的额度快照
-
-### “最新额度”的判定方式
-
-读取 `~/.codex/sessions` 时，按以下规则确定最新额度：
-
-1. 找到最新日期目录
-2. 在该目录里找到最新的 `rollout-*.jsonl`
-3. 读取该文件最后一条 `token_count`
-4. 取其中的 `rate_limits.primary`
-
-## 当前限制
-
-- 其他非激活 profile 无法实时刷新额度，只能显示上次同步的快照
-- 如果某个账号从未保存过，`usage` 不会显示它
-- 当前激活账号的实时额度依赖 `~/.codex/sessions` 中确实存在对应 rollout 数据
-- `summary` 命令已移除，统一由 `usage` 承担额度总览能力
-
-## 输出说明
-
-`usage` 表格默认包含这些列：
-
-- 邮箱
-- 订阅方案
-- 5H额度
-- 5H重置
-- 周额度
-- 周重置
-
-当前激活账号会用 `●` 标记。
+快照会在以下时机更新：
+- `profile save` — 保存当前账号时
+- `profile use` — 切换前刷新旧账号的快照
 
 ## 开发
-
-常用命令：
 
 ```bash
 cargo fmt
 cargo test
+cargo build --release
 ```
 
-当前代码结构：
+代码结构：
 
-- `src/auth.rs`: 读取 `auth.json` 并解析 JWT
-- `src/sessions.rs`: 扫描 `rollout-*.jsonl` 并汇总额度
-- `src/profiles.rs`: 管理 profile 的保存、切换、导入与快照
-- `src/model.rs`: 文本表格和 JSON 输出模型
-- `src/tui.rs`: `profile use` / `profile delete` 的交互式全屏选择器
-- `src/main.rs`: CLI 命令分发入口
-
-测试位于 `tests/` 目录，均使用临时目录同时构造 `.codex` 与 `.codex-auth-switch` 数据，不依赖你机器上的真实账号环境。
-
-## 测试
-
-```bash
-cargo test
-```
+- `src/auth.rs` — 读取并解析鉴权文件
+- `src/sessions.rs` — 扫描实时额度数据
+- `src/profiles.rs` — profile 管理逻辑
+- `src/backup.rs` — WebDAV 备份/恢复
+- `src/tui.rs` — 全屏 TUI 交互组件
+- `src/model.rs` — 输出格式（表格 / JSON）
+- `src/cli.rs` — CLI 参数定义
+- `src/main.rs` — 命令分发入口
+- `tests/` — 集成测试（不依赖本机真实数据）

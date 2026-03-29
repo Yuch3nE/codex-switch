@@ -923,7 +923,7 @@ fn draw_config_editor(frame: &mut ratatui::Frame<'_>, state: &ConfigEditorState)
     // ── Body: 左侧字段列表 + 右侧详情/编辑 ────────────────────────────────────
     let body = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(44), Constraint::Percentage(56)])
+        .constraints([Constraint::Percentage(36), Constraint::Percentage(64)])
         .split(outer[1]);
 
     // Left: field list with label + short value

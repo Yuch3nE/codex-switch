@@ -256,7 +256,9 @@ pub fn webdav_mkcol(config: &BackupConfig) -> anyhow::Result<()> {
         .context("WebDAV MKCOL 请求失败")?;
 
     match resp.status().as_u16() {
-        201 | 405 => Ok(()),
+        // 201 Created, 405 Method Not Allowed (server disallows MKCOL but dir exists),
+        // 409 Conflict (collection already exists on some WebDAV servers, e.g. Nextcloud)
+        201 | 405 | 409 => Ok(()),
         code => bail!("WebDAV MKCOL 失败，状态码: {}", code),
     }
 }

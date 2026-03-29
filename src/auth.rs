@@ -7,14 +7,20 @@ use crate::{jwt, model::AccountSummary};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AuthFile {
+    #[serde(default = "default_auth_mode")]
     pub auth_mode: String,
     #[serde(rename = "OPENAI_API_KEY", default = "null_json_value")]
     pub openai_api_key: Value,
+    #[serde(default)]
     pub tokens: AuthTokens,
     #[serde(default, rename = "refresh_token", skip_serializing)]
     pub(crate) legacy_refresh_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_refresh: Option<String>,
+}
+
+fn default_auth_mode() -> String {
+    "chatgpt".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Default, Serialize)]

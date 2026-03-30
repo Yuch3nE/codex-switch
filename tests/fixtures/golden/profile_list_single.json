@@ -1,0 +1,13 @@
+{
+  "active_profile": "alpha",
+  "profiles": [
+    {
+      "id": "alpha",
+      "name": "alpha",
+      "email": "tetel@05020324.xyz",
+      "subscription_plan": "free",
+      "account_id": "account-123",
+      "active": true
+    }
+  ]
+}

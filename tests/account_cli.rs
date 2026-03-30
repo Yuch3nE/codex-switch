@@ -5,6 +5,13 @@ use predicates::str::contains;
 use serde_json::Value;
 use tempfile::tempdir;
 
+fn assert_json_matches_golden(actual: &[u8]) {
+    let actual_value: Value = serde_json::from_slice(actual).unwrap();
+    let golden_value: Value =
+        serde_json::from_str(include_str!("fixtures/golden/account.json")).unwrap();
+    assert_eq!(actual_value, golden_value);
+}
+
 #[test]
 fn account_command_reads_email_and_plan_from_auth_file() {
     let temp = tempdir().unwrap();
@@ -77,4 +84,26 @@ fn account_command_accepts_auth_without_tokens_field() {
         .success()
         .stdout(contains("\"auth_mode\": \"chatgpt\""))
         .stdout(contains("\"account_id\": null"));
+}
+
+#[test]
+fn account_json_matches_golden_contract() {
+    let temp = tempdir().unwrap();
+    let codex_dir = temp.path().join(".codex");
+    fs::create_dir_all(&codex_dir).unwrap();
+    fs::write(
+        codex_dir.join("auth.json"),
+        include_str!("fixtures/auth.json"),
+    )
+    .unwrap();
+
+    let output = Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .args(["--format", "json", "account"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert_json_matches_golden(&output.stdout);
 }

@@ -1,0 +1,11 @@
+{
+  "auth_mode": "chatgpt",
+  "account_id": "account-123",
+  "user_id": "user-123",
+  "email": "tetel@05020324.xyz",
+  "email_verified": true,
+  "name": "Tel",
+  "subscription_plan": "free",
+  "last_refresh": "2026-03-27T17:52:57+08:00",
+  "organization_count": 1
+}

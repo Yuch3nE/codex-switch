@@ -5,6 +5,13 @@ use predicates::str::contains;
 use serde_json::Value;
 use tempfile::tempdir;
 
+fn assert_profile_list_json_matches_golden(actual: &[u8]) {
+    let actual_value: Value = serde_json::from_slice(actual).unwrap();
+    let golden_value: Value =
+        serde_json::from_str(include_str!("fixtures/golden/profile_list_single.json")).unwrap();
+    assert_eq!(actual_value, golden_value);
+}
+
 fn rollout_with_primary(used_percent: f64, window_minutes: u64, resets_at: u64) -> String {
     format!(
         "{}\n",
@@ -150,6 +157,35 @@ fn profile_list_reports_saved_profiles_and_active_one() {
         .stdout(contains("\"name\": \"beta\""))
         .stdout(contains("\"id\": \"alpha\""))
         .stdout(contains("\"email\": \"alt@example.com\""));
+}
+
+#[test]
+fn profile_list_json_matches_golden_contract() {
+    let temp = tempdir().unwrap();
+    let codex_dir = temp.path().join(".codex");
+    fs::create_dir_all(&codex_dir).unwrap();
+
+    fs::write(
+        codex_dir.join("auth.json"),
+        include_str!("fixtures/auth.json"),
+    )
+    .unwrap();
+    Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .args(["profile", "save", "alpha"])
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("codex-switch")
+        .unwrap()
+        .env("HOME", temp.path())
+        .args(["--format", "json", "profile", "list"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert_profile_list_json_matches_golden(&output.stdout);
 }
 
 #[test]

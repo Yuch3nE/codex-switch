@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Linux ──────────────────────────────────────────────────────────
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact: codex-switch-linux-amd64
+            use_cross: false
+
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            artifact: codex-switch-linux-arm64
+            use_cross: true
+
+          # ── macOS ──────────────────────────────────────────────────────────
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: codex-switch-darwin-amd64
+            use_cross: false
+
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: codex-switch-darwin-arm64
+            use_cross: false
+
+          # ── Windows ────────────────────────────────────────────────────────
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: codex-switch-windows-amd64.exe
+            use_cross: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # ── Linux musl (amd64)：原生 + musl-tools
+      - name: Install musl-tools (Linux amd64 musl)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      # ── cross 用于 aarch64-unknown-linux-musl
+      - name: Install cross
+        if: matrix.use_cross == true
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      # ── 缓存 registry + build 产物（加速 CI）
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      # ── 构建
+      - name: Build (cross)
+        if: matrix.use_cross == true
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Build (native)
+        if: matrix.use_cross == false
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # ── 重命名产物
+      - name: Rename artifact (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cp target/${{ matrix.target }}/release/codex-switch \
+             ${{ matrix.artifact }}
+
+      - name: Rename artifact (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          copy target\${{ matrix.target }}\release\codex-switch.exe `
+               ${{ matrix.artifact }}
+        shell: pwsh
+
+      # ── 上传产物（供后续 release 步骤使用）
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+  # ── 打包并发布 GitHub Release ─────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA256 checksums
+        working-directory: dist
+        run: sha256sum codex-switch-* > SHA256SUMS && cat SHA256SUMS
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+          generate_release_notes: true
+          files: |
+            dist/codex-switch-*
+            dist/SHA256SUMS

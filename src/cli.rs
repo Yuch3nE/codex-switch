@@ -50,6 +50,9 @@ pub enum ProfileCommand {
     Use {
         /// profile 显示名或 id；存在同名时自动进入 TUI 选择
         name: Option<String>,
+        /// 自动选择周额度剩余最高的 profile 并切换
+        #[arg(long, short = 'a', conflicts_with = "name")]
+        auto: bool,
     },
     /// 进入 TUI 多选删除器（不允许删除当前激活的 profile）
     Delete,
@@ -94,7 +97,7 @@ mod tests {
     fn profile_use_allows_missing_name_for_interactive_mode() {
         let cli = Cli::try_parse_from(["codex-switch", "profile", "use"]).unwrap();
         match profile_command(cli) {
-            ProfileCommand::Use { name } => assert!(name.is_none()),
+            ProfileCommand::Use { name, .. } => assert!(name.is_none()),
             _ => panic!("expected profile use command"),
         }
     }

@@ -44,7 +44,26 @@ fn main() -> anyhow::Result<()> {
             cli::ProfileCommand::Save { name } => {
                 profiles::save_profile(&paths.codex_home, &paths.switch_home, name.as_deref())?
             }
-            cli::ProfileCommand::Use { name } => match name {
+            cli::ProfileCommand::Use { name, auto } => {
+                if auto {
+                    let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
+                    if profiles.profiles.is_empty() {
+                        "暂无 profiles，可先使用 profile save 保存当前账号".to_string()
+                    } else if let Some(best) = profiles.best_profile() {
+                        if profiles.active_profile.as_deref() == Some(best.id.as_str()) {
+                            format!(
+                                "当前已是最优 profile: {} ({})",
+                                best.name,
+                                best.email.as_deref().unwrap_or("")
+                            )
+                        } else {
+                            profiles::use_profile(&paths.codex_home, &paths.switch_home, &best.id)?
+                        }
+                    } else {
+                        "暂无 profiles，可先使用 profile save 保存当前账号".to_string()
+                    }
+                } else {
+                match name {
                 Some(name) => {
                     let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
                     let matches = matching_profiles_by_name(&profiles, &name);
@@ -72,7 +91,9 @@ fn main() -> anyhow::Result<()> {
                         select_and_use_profile(&paths.codex_home, &paths.switch_home, profiles)?
                     }
                 }
-            },
+            }
+                }
+            }
             cli::ProfileCommand::Delete => {
                 let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
                 if profiles.profiles.is_empty() {

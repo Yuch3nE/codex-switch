@@ -484,6 +484,20 @@ fn usage_sort_remaining(row: &UsageTableRow) -> f64 {
     .unwrap_or(0.0)
 }
 
+fn profile_weekly_remaining(profile: &ProfileSummary) -> f64 {
+    weekly_limit_for_plan(
+        effective_plan(
+            profile.plan_type.as_deref(),
+            profile.subscription_plan.as_deref(),
+        ),
+        profile.primary.as_ref(),
+        profile.secondary.as_ref(),
+    )
+    .or(profile.primary.as_ref())
+    .map(|value| 100.0 - value.used_percent)
+    .unwrap_or(0.0)
+}
+
 fn weekly_limit_for_plan<'a>(
     plan: Option<&str>,
     primary: Option<&'a PrimaryRateLimit>,
@@ -570,6 +584,27 @@ pub struct ProfileListOutput {
 }
 
 impl ProfileListOutput {
+    /// 从所有 profiles 中选出周额度剩余最高的 profile。
+    /// 排序规则：plan 等级升序（pro > plus > team > free > 其他），再按周额度剩余比例降序。
+    pub fn best_profile(&self) -> Option<&ProfileSummary> {
+        self.profiles.iter().max_by(|left, right| {
+            let rank_l = usage_plan_rank(effective_plan(
+                left.plan_type.as_deref(),
+                left.subscription_plan.as_deref(),
+            ));
+            let rank_r = usage_plan_rank(effective_plan(
+                right.plan_type.as_deref(),
+                right.subscription_plan.as_deref(),
+            ));
+            // rank 越小等级越高，所以用 rank_r.cmp(rank_l) 让等级高的排前面
+            rank_r.cmp(&rank_l).then_with(|| {
+                profile_weekly_remaining(left)
+                    .partial_cmp(&profile_weekly_remaining(right))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        })
+    }
+
     pub fn render(&self, format: OutputFormat) -> anyhow::Result<String> {
         match format {
             OutputFormat::Json => Ok(serde_json::to_string_pretty(self)?),

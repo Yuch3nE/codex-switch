@@ -1,10 +1,14 @@
 # codex-switch
 
-管理多个 Codex 账号，一键切换，随时查看所有账号额度。
+[English documentation](README.md) | [中文文档](README_CN.md)
+
+[![Rust](https://img.shields.io/badge/Rust-1.73-blue.svg)](https://www.rust-lang.org/)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/your-repo/codex-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/your-repo/codex-switch/actions)
 
 Manage multiple Codex accounts, switch instantly, and monitor quota in one place.
 
-## 功能 / Features
+## Features
 
 | 图标 | 命令 / Command | 描述 / Description |
 |------|----------------|-------------------|

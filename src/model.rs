@@ -80,71 +80,96 @@ impl DoctorOutput {
                         .active_profile_file_exists
                         .unwrap_or(true)
                     && self.webdav_reachable.unwrap_or(true);
-                Ok(render_panel(
-                    "环境诊断",
-                    &[
-                    render_row("总体健康   ", if overall_ok { "正常" } else { "需关注" }),
-                    render_row("CODEX 目录   ", &self.codex_home),
-                    render_row("SWITCH 目录  ", &self.switch_home),
-                    render_row(
-                        "codex 可访问 ",
-                        if self.codex_home_exists { "是" } else { "否" },
+
+                let rows: Vec<(&str, String)> = vec![
+                    ("总体健康", if overall_ok { "正常".to_string() } else { "需关注".to_string() }),
+                    ("CODEX 目录", self.codex_home.clone()),
+                    ("SWITCH 目录", self.switch_home.clone()),
+                    (
+                        "codex 可访问",
+                        if self.codex_home_exists { "是".to_string() } else { "否".to_string() },
                     ),
-                    render_row(
+                    (
                         "switch 可访问",
-                        if self.switch_home_exists { "是" } else { "否" },
+                        if self.switch_home_exists { "是".to_string() } else { "否".to_string() },
                     ),
-                    render_row(
+                    (
                         "profiles 目录",
-                        if self.profiles_dir_exists { "存在" } else { "缺失" },
+                        if self.profiles_dir_exists { "存在".to_string() } else { "缺失".to_string() },
                     ),
-                    render_row("auth.json   ", if self.auth_exists { "存在" } else { "缺失" }),
-                    render_row("state.json  ", if self.state_exists { "存在" } else { "缺失" }),
-                    render_row(
+                    (
+                        "auth.json",
+                        if self.auth_exists { "存在".to_string() } else { "缺失".to_string() },
+                    ),
+                    (
+                        "state.json",
+                        if self.state_exists { "存在".to_string() } else { "缺失".to_string() },
+                    ),
+                    (
                         "state 有效性",
-                        if self.state_json_valid { "有效" } else { "无效" },
+                        if self.state_json_valid { "有效".to_string() } else { "无效".to_string() },
                     ),
-                    render_row(
+                    (
                         "rollback.json",
-                        if self.rollback_exists { "存在" } else { "缺失" },
+                        if self.rollback_exists { "存在".to_string() } else { "缺失".to_string() },
                     ),
-                    render_row("profiles 数量", &self.profiles_count.to_string()),
-                    render_row(
-                        "WebDAV 配置  ",
-                        if self.webdav_configured { "已配置" } else { "未配置" },
+                    ("profiles 数量", self.profiles_count.to_string()),
+                    (
+                        "WebDAV 配置",
+                        if self.webdav_configured { "已配置".to_string() } else { "未配置".to_string() },
                     ),
-                    render_row(
-                        "WebDAV 连通  ",
+                    (
+                        "WebDAV 连通",
                         match self.webdav_reachable {
-                            Some(true) => "正常",
-                            Some(false) => "失败",
-                            None => "未检查",
+                            Some(true) => "正常".to_string(),
+                            Some(false) => "失败".to_string(),
+                            None => "未检查".to_string(),
                         },
                     ),
-                    render_row(
-                        "远端备份数  ",
-                        &self
+                    (
+                        "远端备份数",
+                        self
                             .webdav_backups_count
                             .map(|n| n.to_string())
                             .unwrap_or_else(|| "未知".to_string()),
                     ),
-                    render_row(
-                        "WebDAV 错误 ",
-                        self.webdav_error.as_deref().unwrap_or("无"),
+                    (
+                        "WebDAV 错误",
+                        self.webdav_error.as_deref().unwrap_or("无").to_string(),
                     ),
-                    render_row(
-                        "active 文件  ",
+                    (
+                        "active 文件",
                         match self.active_profile_file_exists {
-                            Some(true) => "存在",
-                            Some(false) => "缺失",
-                            None => "未设置",
+                            Some(true) => "存在".to_string(),
+                            Some(false) => "缺失".to_string(),
+                            None => "未设置".to_string(),
                         },
                     ),
-                    closing_row(
+                    (
                         "当前 profile",
-                        self.active_profile.as_deref().unwrap_or("未设置"),
+                        self.active_profile.as_deref().unwrap_or("未设置").to_string(),
                     ),
-                    ],
+                ];
+
+                let label_width = rows
+                    .iter()
+                    .map(|(label, _)| display_width(label))
+                    .max()
+                    .unwrap_or(0);
+                let mut rendered_rows = Vec::with_capacity(rows.len());
+                for (index, (label, value)) in rows.iter().enumerate() {
+                    let padding = label_width.saturating_sub(display_width(label));
+                    let padded_label = format!("{}{}", label, " ".repeat(padding));
+                    if index + 1 == rows.len() {
+                        rendered_rows.push(closing_row(&padded_label, value));
+                    } else {
+                        rendered_rows.push(render_row(&padded_label, value));
+                    }
+                }
+
+                Ok(render_panel(
+                    "环境诊断",
+                    &rendered_rows,
                 ))
             }
         }

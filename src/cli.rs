@@ -13,6 +13,7 @@ pub enum OutputFormat {
 #[command(long_about = "管理多个 Codex 账号 profile 并查看额度总览。\n\n\
     支持保存、切换、删除、导入 Codex 鉴权文件，\n\
     支持 doctor 环境诊断，以及通过 WebDAV 备份/恢复所有 profiles。")]
+#[command(after_long_help = "示例:\n  codex-switch account\n  codex-switch doctor\n  codex-switch usage --format json\n  codex-switch profile use --auto\n  codex-switch --non-interactive profile delete alpha")]
 pub struct Cli {
     #[arg(long, value_enum, default_value = "text", global = true, help = "输出格式")]
     pub format: OutputFormat,
@@ -26,17 +27,22 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    #[command(long_about = "显示当前激活账号的鉴权信息（邮箱、订阅方案、token 刷新时间）。\n\n示例:\n  codex-switch account\n  codex-switch --format json account")]
     /// 显示当前激活账号的鉴权信息（邮箱、订阅方案、token 刷新时间）
     Account,
+    #[command(long_about = "诊断本地环境状态（目录、配置文件、profiles、WebDAV 连通性）。\n\n示例:\n  codex-switch doctor\n  codex-switch --format json doctor")]
     /// 诊断本地环境状态（目录、配置文件、profiles、WebDAV 连通性）
     Doctor,
+    #[command(long_about = "显示所有已保存 profile 的额度快照（当前激活账号优先用实时数据）。\n\n示例:\n  codex-switch usage\n  codex-switch --format json usage")]
     /// 显示所有已保存 profile 的额度快照（当前激活账号优先用实时数据）
     Usage,
+    #[command(long_about = "管理本地 Codex 账号 profiles。\n\n示例:\n  codex-switch profile save work\n  codex-switch profile list\n  codex-switch profile use --auto")]
     /// 管理本地 Codex 账号 profiles
     Profile {
         #[command(subcommand)]
         command: ProfileCommand,
     },
+    #[command(long_about = "输出 Shell 自动补全脚本（bash / zsh / fish / powershell）。\n\n示例:\n  codex-switch completions zsh > ~/.zsh/completions/_codex-switch")]
     /// 输出 Shell 自动补全脚本（bash / zsh / fish / powershell）
     Completions {
         /// 目标 Shell
@@ -46,11 +52,13 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum ProfileCommand {
+    #[command(long_about = "将当前 ~/.codex/auth.json 保存为一个 profile（同时记录额度快照）。\n\n示例:\n  codex-switch profile save\n  codex-switch profile save work")]
     /// 将当前 ~/.codex/auth.json 保存为一个 profile（同时记录额度快照）
     Save {
         /// profile 显示名，省略时取邮箱 @ 前缀
         name: Option<String>,
     },
+    #[command(long_about = "切换到指定 profile；可传 id/name/email，不传参数时进入 TUI。\n\n示例:\n  codex-switch profile use\n  codex-switch profile use alpha\n  codex-switch profile use alice@example.com\n  codex-switch profile use --auto\n  codex-switch --non-interactive profile use --auto")]
     /// 切换到指定 profile；可传 id/name/email，不传参数时进入 TUI
     Use {
         /// profile 选择器（id/显示名/邮箱）；存在多匹配时进入 TUI
@@ -59,23 +67,27 @@ pub enum ProfileCommand {
         #[arg(long, short = 'a', conflicts_with = "name")]
         auto: bool,
     },
+    #[command(long_about = "删除指定 profile；可传 id/name/email，省略时进入 TUI 多选。\n\n示例:\n  codex-switch profile delete\n  codex-switch profile delete alpha\n  codex-switch profile delete alice@example.com\n  codex-switch --non-interactive profile delete alpha")]
     /// 删除指定 profile；可传 id/name/email，省略时进入 TUI 多选
     Delete {
         /// 删除选择器（id/显示名/邮箱）；省略时进入 TUI 多选
         name: Option<String>,
     },
+    #[command(long_about = "备份所有 profiles 到 WebDAV（有配置时直接执行，--setup 可重新配置）。\n\n示例:\n  codex-switch profile backup\n  codex-switch profile backup --setup")]
     /// 备份所有 profiles 到 WebDAV（有配置时直接执行，--setup 可重新配置）
     Backup {
         /// 打开 TUI 配置向导（重新配置 WebDAV 连接信息）
         #[arg(long)]
         setup: bool,
     },
+    #[command(long_about = "从 WebDAV 备份文件恢复 profiles（有配置时直接列出，--setup 可重新配置）。\n\n示例:\n  codex-switch profile restore\n  codex-switch profile restore --setup")]
     /// 从 WebDAV 备份文件恢复 profiles（有配置时直接列出，--setup 可重新配置）
     Restore {
         /// 打开 TUI 配置向导（重新配置 WebDAV 连接信息）
         #[arg(long)]
         setup: bool,
     },
+    #[command(long_about = "导入 auth.json 文件或目录（不自动切换当前激活账号）。\n\n示例:\n  codex-switch profile import /path/to/auth.json\n  codex-switch profile import --cpa /path/to/cpa.json")]
     /// 导入 auth.json 文件或目录（不自动切换当前激活账号）
     Import {
         /// 以 CPA 鉴权格式（而非标准 auth.json）解析并导入
@@ -84,6 +96,7 @@ pub enum ProfileCommand {
         /// 要导入的文件路径或目录路径
         path: String,
     },
+    #[command(long_about = "列出所有已保存 profile（名称、id、是否激活）。\n\n示例:\n  codex-switch profile list\n  codex-switch --format json profile list")]
     /// 列出所有已保存的 profile（名称、id、是否激活）
     List,
 }

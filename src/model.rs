@@ -48,12 +48,18 @@ impl AccountSummary {
 pub struct DoctorOutput {
     pub codex_home: String,
     pub switch_home: String,
+    pub codex_home_exists: bool,
+    pub switch_home_exists: bool,
+    pub profiles_dir_exists: bool,
     pub auth_exists: bool,
     pub state_exists: bool,
+    pub state_json_valid: bool,
     pub rollback_exists: bool,
     pub profiles_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_profile_file_exists: Option<bool>,
 }
 
 impl DoctorOutput {
@@ -65,13 +71,37 @@ impl DoctorOutput {
                 &[
                     render_row("CODEX 目录   ", &self.codex_home),
                     render_row("SWITCH 目录  ", &self.switch_home),
+                    render_row(
+                        "codex 可访问 ",
+                        if self.codex_home_exists { "是" } else { "否" },
+                    ),
+                    render_row(
+                        "switch 可访问",
+                        if self.switch_home_exists { "是" } else { "否" },
+                    ),
+                    render_row(
+                        "profiles 目录",
+                        if self.profiles_dir_exists { "存在" } else { "缺失" },
+                    ),
                     render_row("auth.json   ", if self.auth_exists { "存在" } else { "缺失" }),
                     render_row("state.json  ", if self.state_exists { "存在" } else { "缺失" }),
+                    render_row(
+                        "state 有效性",
+                        if self.state_json_valid { "有效" } else { "无效" },
+                    ),
                     render_row(
                         "rollback.json",
                         if self.rollback_exists { "存在" } else { "缺失" },
                     ),
                     render_row("profiles 数量", &self.profiles_count.to_string()),
+                    render_row(
+                        "active 文件  ",
+                        match self.active_profile_file_exists {
+                            Some(true) => "存在",
+                            Some(false) => "缺失",
+                            None => "未设置",
+                        },
+                    ),
                     closing_row(
                         "当前 profile",
                         self.active_profile.as_deref().unwrap_or("未设置"),

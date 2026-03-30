@@ -207,6 +207,9 @@ fn matching_profiles_by_selector(
 
 fn build_doctor_output(paths: &AppPaths) -> anyhow::Result<model::DoctorOutput> {
     let profiles_dir = paths.switch_home.join("profiles");
+    let codex_home_exists = paths.codex_home.exists();
+    let switch_home_exists = paths.switch_home.exists();
+    let profiles_dir_exists = profiles_dir.exists();
     let profiles_count = if profiles_dir.exists() {
         fs::read_dir(&profiles_dir)?
             .filter_map(Result::ok)
@@ -223,23 +226,38 @@ fn build_doctor_output(paths: &AppPaths) -> anyhow::Result<model::DoctorOutput> 
         0
     };
 
-    let active_profile = paths
-        .switch_home
-        .join("state.json")
-        .exists()
-        .then(|| fs::read(paths.switch_home.join("state.json")).ok())
-        .flatten()
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .and_then(|value| value.get("active_profile").and_then(serde_json::Value::as_str).map(ToOwned::to_owned));
+    let state_path = paths.switch_home.join("state.json");
+    let state_exists = state_path.exists();
+    let state_json = if state_exists { fs::read(&state_path).ok() } else { None }
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+    let state_json_valid = if state_exists {
+        state_json.is_some()
+    } else {
+        false
+    };
+    let active_profile = state_json.as_ref().and_then(|value| {
+        value
+            .get("active_profile")
+            .and_then(serde_json::Value::as_str)
+            .map(ToOwned::to_owned)
+    });
+    let active_profile_file_exists = active_profile
+        .as_ref()
+        .map(|id| profiles_dir.join(format!("{id}.json")).exists());
 
     Ok(model::DoctorOutput {
         codex_home: paths.codex_home.display().to_string(),
         switch_home: paths.switch_home.display().to_string(),
+        codex_home_exists,
+        switch_home_exists,
+        profiles_dir_exists,
         auth_exists: paths.codex_home.join("auth.json").exists(),
-        state_exists: paths.switch_home.join("state.json").exists(),
+        state_exists,
+        state_json_valid,
         rollback_exists: paths.switch_home.join("rollback.json").exists(),
         profiles_count,
         active_profile,
+        active_profile_file_exists,
     })
 }
 

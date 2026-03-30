@@ -76,6 +76,14 @@ codex-switch doctor
 codex-switch --format json doctor
 ```
 
+Health checks include:
+
+- codex/switch directory existence
+- profiles directory existence
+- auth/state/rollback file presence
+- state.json parse validity
+- active profile file existence
+
 ### usage
 Show snapshot quota table:
 

@@ -43,11 +43,30 @@ fn doctor_json_reports_basic_status() {
     assert!(output.status.success());
 
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value.get("codex_home_exists").and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        value.get("switch_home_exists").and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        value.get("profiles_dir_exists").and_then(Value::as_bool),
+        Some(true)
+    );
     assert_eq!(value.get("auth_exists").and_then(Value::as_bool), Some(true));
     assert_eq!(value.get("state_exists").and_then(Value::as_bool), Some(true));
+    assert_eq!(value.get("state_json_valid").and_then(Value::as_bool), Some(true));
     assert_eq!(value.get("profiles_count").and_then(Value::as_u64), Some(1));
     assert_eq!(
         value.get("active_profile").and_then(Value::as_str),
         Some("alpha")
+    );
+    assert_eq!(
+        value
+            .get("active_profile_file_exists")
+            .and_then(Value::as_bool),
+        Some(true)
     );
 }

@@ -72,6 +72,14 @@ codex-switch doctor
 codex-switch --format json doctor
 ```
 
+健康检查项包括：
+
+- codex/switch 目录是否存在
+- profiles 目录是否存在
+- auth/state/rollback 文件是否存在
+- state.json 是否可解析
+- active profile 对应文件是否存在
+
 ### usage
 
 ```bash

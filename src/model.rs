@@ -44,6 +44,44 @@ impl AccountSummary {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DoctorOutput {
+    pub codex_home: String,
+    pub switch_home: String,
+    pub auth_exists: bool,
+    pub state_exists: bool,
+    pub rollback_exists: bool,
+    pub profiles_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_profile: Option<String>,
+}
+
+impl DoctorOutput {
+    pub fn render(&self, format: OutputFormat) -> anyhow::Result<String> {
+        match format {
+            OutputFormat::Json => Ok(serde_json::to_string_pretty(self)?),
+            OutputFormat::Text => Ok(render_panel(
+                "环境诊断",
+                &[
+                    render_row("CODEX 目录   ", &self.codex_home),
+                    render_row("SWITCH 目录  ", &self.switch_home),
+                    render_row("auth.json   ", if self.auth_exists { "存在" } else { "缺失" }),
+                    render_row("state.json  ", if self.state_exists { "存在" } else { "缺失" }),
+                    render_row(
+                        "rollback.json",
+                        if self.rollback_exists { "存在" } else { "缺失" },
+                    ),
+                    render_row("profiles 数量", &self.profiles_count.to_string()),
+                    closing_row(
+                        "当前 profile",
+                        self.active_profile.as_deref().unwrap_or("未设置"),
+                    ),
+                ],
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct TokenUsage {
     pub input_tokens: u64,

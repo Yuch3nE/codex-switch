@@ -7,6 +7,7 @@ mod profiles;
 mod sessions;
 mod tui;
 
+use std::fs;
 use std::path::PathBuf;
 use std::io::IsTerminal;
 
@@ -37,6 +38,7 @@ fn main() -> anyhow::Result<()> {
 
     let output = match cli.command {
         cli::Command::Account => auth::build_account_summary(&paths.codex_home)?.render(cli.format)?,
+        cli::Command::Doctor => build_doctor_output(&paths)?.render(cli.format)?,
         cli::Command::Usage => {
             let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
             model::UsageTableOutput::from_profiles(profiles).render(cli.format)?
@@ -201,6 +203,44 @@ fn matching_profiles_by_selector(
         })
         .cloned()
         .collect()
+}
+
+fn build_doctor_output(paths: &AppPaths) -> anyhow::Result<model::DoctorOutput> {
+    let profiles_dir = paths.switch_home.join("profiles");
+    let profiles_count = if profiles_dir.exists() {
+        fs::read_dir(&profiles_dir)?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.is_file()
+                    && path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.ends_with(".json") && !name.starts_with('.'))
+            })
+            .count()
+    } else {
+        0
+    };
+
+    let active_profile = paths
+        .switch_home
+        .join("state.json")
+        .exists()
+        .then(|| fs::read(paths.switch_home.join("state.json")).ok())
+        .flatten()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|value| value.get("active_profile").and_then(serde_json::Value::as_str).map(ToOwned::to_owned));
+
+    Ok(model::DoctorOutput {
+        codex_home: paths.codex_home.display().to_string(),
+        switch_home: paths.switch_home.display().to_string(),
+        auth_exists: paths.codex_home.join("auth.json").exists(),
+        state_exists: paths.switch_home.join("state.json").exists(),
+        rollback_exists: paths.switch_home.join("rollback.json").exists(),
+        profiles_count,
+        active_profile,
+    })
 }
 
 #[cfg(test)]

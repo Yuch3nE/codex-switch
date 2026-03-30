@@ -22,6 +22,7 @@ A command-line tool for managing multiple Codex accounts, switching quickly, and
 | Icon | Command | Description |
 |------|---------|-------------|
 | 🧾 | `codex-switch account` | Show current account info |
+| 🩺 | `codex-switch doctor` | Diagnose local environment and profile state |
 | 📊 | `codex-switch usage` | Display quota overview for all saved profiles |
 | 💾 | `codex-switch profile save [name]` | Save current account auth as a profile |
 | 🔁 | `codex-switch profile use [name_or_email]` | Switch to profile (TUI when omitted or ambiguous) |
@@ -65,6 +66,14 @@ Show current profile summary:
 
 ```bash
 codex-switch account
+```
+
+### doctor
+Show local diagnostic status (paths/files/profile count):
+
+```bash
+codex-switch doctor
+codex-switch --format json doctor
 ```
 
 ### usage

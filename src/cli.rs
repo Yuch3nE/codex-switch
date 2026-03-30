@@ -28,6 +28,8 @@ pub struct Cli {
 pub enum Command {
     /// 显示当前激活账号的鉴权信息（邮箱、订阅方案、token 刷新时间）
     Account,
+    /// 诊断本地环境状态（路径、配置文件、profiles 数量）
+    Doctor,
     /// 显示所有已保存 profile 的额度快照表格（当前激活账号用实时数据）
     Usage,
     /// 管理本地 Codex 账号 profiles
@@ -174,6 +176,15 @@ mod tests {
         match cli.command {
             Command::Completions { shell } => assert_eq!(shell, clap_complete::Shell::Zsh),
             _ => panic!("expected completions command"),
+        }
+    }
+
+    #[test]
+    fn doctor_parses() {
+        let cli = Cli::try_parse_from(["codex-switch", "doctor"]).unwrap();
+        match cli.command {
+            Command::Doctor => {}
+            _ => panic!("expected doctor command"),
         }
     }
 }

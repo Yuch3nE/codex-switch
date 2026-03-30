@@ -10,6 +10,7 @@
 | `codex-switch usage` | 查看所有账号额度总览 |
 | `codex-switch profile save` | 保存当前账号 |
 | `codex-switch profile use` | 切换账号（TUI 交互或直接指定名称） |
+| `codex-switch profile use --auto` | 自动切换到周额度剩余最高的账号 |
 | `codex-switch profile list` | 列出所有已保存账号 |
 | `codex-switch profile delete` | 删除账号（TUI 多选） |
 | `codex-switch profile import` | 导入 auth.json 文件 |
@@ -94,7 +95,14 @@ codex-switch profile use
 
 # 直接指定名称
 codex-switch profile use work
+
+# 自动选择周额度剩余最高的账号
+codex-switch profile use --auto
+# 或使用短选项
+codex-switch profile use -a
 ```
+
+`--auto` 排序规则：订阅等级高的优先（pro > plus > team > free > 其他），同等级内按周额度剩余比例降序选择。若当前账号已是最优，会提示无需切换。
 
 切换时会自动刷新当前账号的额度快照，再执行切换。
 

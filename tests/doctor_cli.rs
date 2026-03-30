@@ -17,7 +17,9 @@ fn doctor_text_reports_missing_files() {
         .success()
         .stdout(contains("环境诊断"))
         .stdout(contains("auth.json"))
-        .stdout(contains("缺失"));
+        .stdout(contains("缺失"))
+        .stdout(contains("WebDAV 配置"))
+        .stdout(contains("未配置"));
 }
 
 #[test]
@@ -59,6 +61,13 @@ fn doctor_json_reports_basic_status() {
     assert_eq!(value.get("state_exists").and_then(Value::as_bool), Some(true));
     assert_eq!(value.get("state_json_valid").and_then(Value::as_bool), Some(true));
     assert_eq!(value.get("profiles_count").and_then(Value::as_u64), Some(1));
+    assert_eq!(
+        value.get("webdav_configured").and_then(Value::as_bool),
+        Some(false)
+    );
+    assert!(value.get("webdav_reachable").is_none());
+    assert!(value.get("webdav_backups_count").is_none());
+    assert!(value.get("webdav_error").is_none());
     assert_eq!(
         value.get("active_profile").and_then(Value::as_str),
         Some("alpha")

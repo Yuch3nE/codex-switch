@@ -79,6 +79,7 @@ codex-switch --format json doctor
 - auth/state/rollback 文件是否存在
 - state.json 是否可解析
 - active profile 对应文件是否存在
+- WebDAV 是否已配置，以及在有配置时的连通性
 
 ### usage
 

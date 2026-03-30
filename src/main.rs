@@ -245,6 +245,15 @@ fn build_doctor_output(paths: &AppPaths) -> anyhow::Result<model::DoctorOutput> 
         .as_ref()
         .map(|id| profiles_dir.join(format!("{id}.json")).exists());
 
+    let (webdav_configured, webdav_reachable, webdav_backups_count, webdav_error) =
+        match backup::BackupConfig::load(&paths.switch_home)? {
+            Some(config) => match backup::webdav_list_backups(&config) {
+                Ok(backups) => (true, Some(true), Some(backups.len()), None),
+                Err(error) => (true, Some(false), None, Some(error.to_string())),
+            },
+            None => (false, None, None, None),
+        };
+
     Ok(model::DoctorOutput {
         codex_home: paths.codex_home.display().to_string(),
         switch_home: paths.switch_home.display().to_string(),
@@ -256,6 +265,10 @@ fn build_doctor_output(paths: &AppPaths) -> anyhow::Result<model::DoctorOutput> 
         state_json_valid,
         rollback_exists: paths.switch_home.join("rollback.json").exists(),
         profiles_count,
+        webdav_configured,
+        webdav_reachable,
+        webdav_backups_count,
+        webdav_error,
         active_profile,
         active_profile_file_exists,
     })

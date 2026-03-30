@@ -56,6 +56,13 @@ pub struct DoctorOutput {
     pub state_json_valid: bool,
     pub rollback_exists: bool,
     pub profiles_count: usize,
+    pub webdav_configured: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webdav_reachable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webdav_backups_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webdav_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_profile: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,6 +101,29 @@ impl DoctorOutput {
                         if self.rollback_exists { "存在" } else { "缺失" },
                     ),
                     render_row("profiles 数量", &self.profiles_count.to_string()),
+                    render_row(
+                        "WebDAV 配置  ",
+                        if self.webdav_configured { "已配置" } else { "未配置" },
+                    ),
+                    render_row(
+                        "WebDAV 连通  ",
+                        match self.webdav_reachable {
+                            Some(true) => "可达",
+                            Some(false) => "不可达",
+                            None => "未检查",
+                        },
+                    ),
+                    render_row(
+                        "远端备份数  ",
+                        &self
+                            .webdav_backups_count
+                            .map(|n| n.to_string())
+                            .unwrap_or_else(|| "未知".to_string()),
+                    ),
+                    render_row(
+                        "WebDAV 错误 ",
+                        self.webdav_error.as_deref().unwrap_or("无"),
+                    ),
                     render_row(
                         "active 文件  ",
                         match self.active_profile_file_exists {

@@ -83,6 +83,7 @@ Health checks include:
 - auth/state/rollback file presence
 - state.json parse validity
 - active profile file existence
+- WebDAV configuration and connectivity (when backup config exists)
 
 ### usage
 Show snapshot quota table:

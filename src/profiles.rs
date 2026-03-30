@@ -93,11 +93,10 @@ pub fn use_profile(codex_home: &Path, switch_home: &Path, name: &str) -> anyhow:
     let resolved = resolve_profile(switch_home, name)?;
 
     let current_auth = codex_home.join("auth.json");
-    let rollback_dir = profiles_root(switch_home).join(".rollback");
-    fs::create_dir_all(&rollback_dir)?;
+    let rollback_path = switch_home.join("rollback.json");
 
     if current_auth.exists() {
-        copy_auth_json_with_canonicalization(&current_auth, &rollback_dir.join("auth.json"))?;
+        copy_auth_json_with_canonicalization(&current_auth, &rollback_path)?
     }
 
     auth::write_auth_file(&current_auth, &resolved.auth)?;
@@ -380,7 +379,7 @@ fn copy_auth_json_with_canonicalization(source: &Path, destination: &Path) -> an
 }
 
 fn state_path(switch_home: &Path) -> PathBuf {
-    profiles_root(switch_home).join("state.json")
+    switch_home.join("state.json")
 }
 
 fn validate_profile_name(name: &str) -> anyhow::Result<()> {
@@ -543,8 +542,7 @@ fn read_state(switch_home: &Path) -> anyhow::Result<ProfilesState> {
 }
 
 fn write_state(switch_home: &Path, state: &ProfilesState) -> anyhow::Result<()> {
-    let root = profiles_root(switch_home);
-    fs::create_dir_all(&root)?;
+    fs::create_dir_all(switch_home)?;
     fs::write(state_path(switch_home), serde_json::to_vec_pretty(state)?)?;
     Ok(())
 }
@@ -743,7 +741,7 @@ mod tests {
         assert!(!flat_profile_path(switch_home, "beta").exists());
         assert!(flat_profile_path(switch_home, "gamma").exists());
 
-        let state: serde_json::Value = serde_json::from_slice(&fs::read(root.join("state.json")).unwrap()).unwrap();
+        let state: serde_json::Value = serde_json::from_slice(&fs::read(switch_home.join("state.json")).unwrap()).unwrap();
         assert_eq!(state.get("active_profile").and_then(serde_json::Value::as_str), Some("gamma"));
     }
 

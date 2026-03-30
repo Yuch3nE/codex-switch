@@ -269,22 +269,25 @@ fn usage_falls_back_to_active_profile_current_session_snapshot() {
     let temp = tempdir().unwrap();
     let codex_dir = temp.path().join(".codex");
     let switch_dir = temp.path().join(".codex-auth-switch");
-    let profile_dir = switch_dir.join("profiles/alpha");
+    let profiles_dir = switch_dir.join("profiles");
     let sessions_dir = codex_dir.join("sessions/2026/03/28");
 
-    fs::create_dir_all(&profile_dir).unwrap();
+    fs::create_dir_all(&profiles_dir).unwrap();
     fs::create_dir_all(&sessions_dir).unwrap();
+
+    let auth_value: Value = serde_json::from_str(include_str!("fixtures/auth.json")).unwrap();
     fs::write(
-        profile_dir.join("auth.json"),
-        include_str!("fixtures/auth.json"),
-    )
-    .unwrap();
-    fs::write(profile_dir.join("profile.json"), "{\"name\":\"alpha\"}").unwrap();
+        profiles_dir.join("alpha.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "name": "alpha",
+            "email": "tetel@05020324.xyz",
+            "auth": auth_value
+        })).unwrap(),
+    ).unwrap();
     fs::write(
-        switch_dir.join("profiles/state.json"),
+        switch_dir.join("state.json"),
         "{\"active_profile\":\"alpha\"}",
-    )
-    .unwrap();
+    ).unwrap();
     fs::write(
         sessions_dir.join("rollout-active.jsonl"),
         "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"output_tokens\":20,\"reasoning_output_tokens\":30,\"total_tokens\":60}},\"rate_limits\":{\"primary\":{\"used_percent\":37.0,\"window_minutes\":10080,\"resets_at\":1775210022}}}}\n",
@@ -307,26 +310,26 @@ fn usage_prefers_active_profile_realtime_snapshot_over_saved_snapshot() {
     let temp = tempdir().unwrap();
     let codex_dir = temp.path().join(".codex");
     let switch_dir = temp.path().join(".codex-auth-switch");
-    let profile_dir = switch_dir.join("profiles/alpha");
+    let profiles_dir = switch_dir.join("profiles");
     let sessions_dir = codex_dir.join("sessions/2026/03/28");
 
-    fs::create_dir_all(&profile_dir).unwrap();
+    fs::create_dir_all(&profiles_dir).unwrap();
     fs::create_dir_all(&sessions_dir).unwrap();
+
+    let auth_value: Value = serde_json::from_str(include_str!("fixtures/auth.json")).unwrap();
     fs::write(
-        profile_dir.join("auth.json"),
-        include_str!("fixtures/auth.json"),
-    )
-    .unwrap();
+        profiles_dir.join("alpha.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "name": "alpha",
+            "email": "tetel@05020324.xyz",
+            "primary": {"used_percent": 60.0, "window_minutes": 43200, "resets_at": 1777812000},
+            "auth": auth_value
+        })).unwrap(),
+    ).unwrap();
     fs::write(
-        profile_dir.join("profile.json"),
-        "{\"name\":\"alpha\",\"primary\":{\"used_percent\":60.0,\"window_minutes\":43200,\"resets_at\":1777812000}}",
-    )
-    .unwrap();
-    fs::write(
-        switch_dir.join("profiles/state.json"),
+        switch_dir.join("state.json"),
         "{\"active_profile\":\"alpha\"}",
-    )
-    .unwrap();
+    ).unwrap();
     fs::write(
         sessions_dir.join("rollout-active.jsonl"),
         "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"output_tokens\":20,\"reasoning_output_tokens\":30,\"total_tokens\":60}},\"rate_limits\":{\"primary\":{\"used_percent\":37.0,\"window_minutes\":10080,\"resets_at\":1775210022}}}}\n",

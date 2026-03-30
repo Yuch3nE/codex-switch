@@ -94,8 +94,8 @@ fn profile_save_and_use_switches_auth_file() {
 
     let active_auth = fs::read_to_string(codex_dir.join("auth.json")).unwrap();
     let rollback_auth =
-        fs::read_to_string(switch_dir.join("profiles/.rollback/auth.json")).unwrap();
-    let state = fs::read_to_string(switch_dir.join("profiles/state.json")).unwrap();
+        fs::read_to_string(switch_dir.join("rollback.json")).unwrap();
+    let state = fs::read_to_string(switch_dir.join("state.json")).unwrap();
 
     assert!(active_auth.contains("account-123"));
     assert!(rollback_auth.contains("account-456"));

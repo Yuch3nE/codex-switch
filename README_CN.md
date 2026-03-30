@@ -1,4 +1,4 @@
-# codex-switch（中文文档）
+# codex-switch
 
 [English documentation](README.md) | [中文文档](README_CN.md)
 

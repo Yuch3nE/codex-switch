@@ -20,6 +20,7 @@ struct AppPaths {
 
 fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
+    let allow_interactive = std::io::stdout().is_terminal() && !cli.non_interactive;
 
     if let cli::Command::Completions { shell } = &cli.command {
         use clap::CommandFactory;
@@ -69,8 +70,10 @@ fn main() -> anyhow::Result<()> {
                     let matches = matching_profiles_by_selector(&profiles, &name);
 
                     if matches.len() > 1 {
-                        if !std::io::stdout().is_terminal() {
-                            anyhow::bail!("存在多个同名 profile，请使用 id 切换: {name}");
+                        if !allow_interactive {
+                            anyhow::bail!(
+                                "E_AMBIGUOUS_SELECTOR: 存在多个匹配 profile，请使用 id 切换: {name}"
+                            );
                         }
 
                         let duplicate_output = model::ProfileListOutput {
@@ -89,6 +92,10 @@ fn main() -> anyhow::Result<()> {
                     let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
                     if profiles.profiles.is_empty() {
                         "暂无 profiles，可先使用 profile save 保存当前账号".to_string()
+                    } else if !allow_interactive {
+                        anyhow::bail!(
+                            "E_INTERACTIVE_REQUIRED: 未提供 profile 选择器，且当前为非交互模式；请传 name/email/id 或 --auto"
+                        )
                     } else {
                         select_and_use_profile(&paths.codex_home, &paths.switch_home, profiles)?
                     }
@@ -108,8 +115,10 @@ fn main() -> anyhow::Result<()> {
                         let id = matches[0].id.clone();
                         profiles::delete_profiles(&paths.switch_home, &[id.as_str()])?
                     } else {
-                        if !std::io::stdout().is_terminal() {
-                            anyhow::bail!("存在多个同名 profile，请使用 id 指定: {selector}");
+                        if !allow_interactive {
+                            anyhow::bail!(
+                                "E_AMBIGUOUS_SELECTOR: 存在多个匹配 profile，请使用 id 指定: {selector}"
+                            );
                         }
                         let candidates = model::ProfileListOutput {
                             active_profile: profiles.active_profile.clone(),
@@ -122,6 +131,10 @@ fn main() -> anyhow::Result<()> {
                             "已取消删除".to_string()
                         }
                     }
+                } else if !allow_interactive {
+                    anyhow::bail!(
+                        "E_INTERACTIVE_REQUIRED: 未提供删除选择器，且当前为非交互模式；请传 name/email/id"
+                    )
                 } else if let Some(selected) = tui::select_profiles_to_delete(profiles)? {
                     let selected_ids = selected.iter().map(|profile| profile.id.as_str()).collect::<Vec<_>>();
                     profiles::delete_profiles(&paths.switch_home, &selected_ids)?

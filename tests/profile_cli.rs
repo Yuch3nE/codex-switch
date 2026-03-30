@@ -263,7 +263,7 @@ fn profile_use_rejects_ambiguous_duplicate_display_names() {
         .args(["profile", "use", "tetel"])
         .assert()
         .failure()
-        .stderr(contains("存在多个同名 profile，请使用 id 切换: tetel"));
+        .stderr(contains("E_AMBIGUOUS_SELECTOR: 存在多个匹配 profile，请使用 id 切换: tetel"));
 
     Command::cargo_bin("codex-switch")
         .unwrap()

@@ -32,6 +32,10 @@
 | 🔄 | `codex-switch profile restore` | 从 WebDAV 恢复 |
 | 💡 | `codex-switch completions <shell>` | 生成补全脚本 |
 
+适合 Agent/CI 的全局参数：
+
+- `--non-interactive`：禁用 TUI 交互；若命令需要交互选择，会返回带错误码的报错信息。
+
 ## 安装
 
 ```bash

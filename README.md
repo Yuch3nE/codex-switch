@@ -33,6 +33,10 @@ A command-line tool for managing multiple Codex accounts, switching quickly, and
 | 🔄 | `codex-switch profile restore` | Restore profiles from WebDAV |
 | 💡 | `codex-switch completions <shell>` | Generate shell completions |
 
+Global flag for agents/CI:
+
+- `--non-interactive`: disable TUI interactions and return coded errors when interactive selection would be required.
+
 ## Installation
 
 ```bash

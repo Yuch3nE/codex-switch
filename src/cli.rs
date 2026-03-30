@@ -17,6 +17,9 @@ pub struct Cli {
     #[arg(long, value_enum, default_value = "text", global = true, help = "输出格式")]
     pub format: OutputFormat,
 
+    #[arg(long, global = true, help = "禁用 TUI 交互；若必须交互则直接报错")]
+    pub non_interactive: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -103,6 +106,18 @@ mod tests {
             ProfileCommand::Use { name, .. } => assert!(name.is_none()),
             _ => panic!("expected profile use command"),
         }
+    }
+
+    #[test]
+    fn global_non_interactive_flag_parses() {
+        let cli = Cli::try_parse_from([
+            "codex-switch",
+            "--non-interactive",
+            "profile",
+            "list",
+        ])
+        .unwrap();
+        assert!(cli.non_interactive);
     }
 
     #[test]

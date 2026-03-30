@@ -122,8 +122,7 @@ fn select_and_use_profile(
 }
 
 fn resolve_app_paths() -> anyhow::Result<AppPaths> {
-    let home = std::env::var_os("HOME").context("HOME is not set")?;
-    let home = PathBuf::from(home);
+    let home = dirs::home_dir().context("无法获取用户 home 目录")?;
 
     Ok(AppPaths {
         codex_home: home.join(".codex"),

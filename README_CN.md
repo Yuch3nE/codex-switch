@@ -131,3 +131,21 @@ codex-switch profile restore --setup
 - `profile use` 会写入 `rollback.json` 以便安全回退。
 - 支持使用 `--format json` 输出 JSON 格式结果。
 
+## 错误码与退出码
+
+退出码约定：
+
+- `0`：命令执行成功。
+- `1`：命令执行失败。
+
+机器可识别错误前缀（当前用于非交互流程）：
+
+- `E_INTERACTIVE_REQUIRED`：命令需要交互选择，但启用了 `--non-interactive`。
+- `E_AMBIGUOUS_SELECTOR`：选择器匹配到多个 profile，需要改用 id 明确指定。
+
+推荐自动化处理方式：
+
+1. 尽量使用 `--non-interactive --format json`。
+2. 若出现 `E_AMBIGUOUS_SELECTOR`，先 `profile list` 获取候选，再用 id 重试。
+3. 若出现 `E_INTERACTIVE_REQUIRED`，改为显式传入 `id/name/email` 或使用 `--auto`。
+

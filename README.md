@@ -142,3 +142,21 @@ codex-switch profile restore --setup
 - `profile use` writes a rollback copy for safer switching.
 - JSON output is available with `--format json`.
 
+## Error Codes And Exit Codes
+
+Exit codes:
+
+- `0`: command completed successfully.
+- `1`: command failed.
+
+Machine-readable error prefixes (currently used in non-interactive flows):
+
+- `E_INTERACTIVE_REQUIRED`: command requires interactive selection, but `--non-interactive` is enabled.
+- `E_AMBIGUOUS_SELECTOR`: selector matched multiple profiles and must be disambiguated by id.
+
+Recommended automation pattern:
+
+1. Run with `--non-interactive --format json` whenever possible.
+2. If `E_AMBIGUOUS_SELECTOR` occurs, fetch candidates with `profile list` and retry by id.
+3. If `E_INTERACTIVE_REQUIRED` occurs, re-run with explicit selector (`id/name/email`) or `--auto`.
+

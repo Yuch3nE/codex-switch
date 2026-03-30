@@ -110,6 +110,14 @@ codex-switch profile use -a
 codex-switch profile list
 ```
 
+### profile inspect
+查询单个 profile 详情（支持 id/name/email）：
+
+```bash
+codex-switch profile inspect abc123
+codex-switch --format json profile inspect alice@example.com
+```
+
 ### profile delete
 
 ```bash
@@ -144,17 +152,34 @@ codex-switch profile restore --setup
 
 退出码约定：
 
-- `0`：命令执行成功。
-- `1`：命令执行失败。
+| 码 | 含义 |
+|------|---------|
+| `0` | 命令成功 |
+| `1` | 运行时错误 |
+| `2` | 资源不存在（`E_NOT_FOUND`） |
+| `3` | 需要交互（`E_INTERACTIVE_REQUIRED`） |
+| `4` | 选择器歧义（`E_AMBIGUOUS_SELECTOR`） |
 
-机器可识别错误前缀（当前用于非交互流程）：
+stderr 中的机器可识别错误前缀：
 
+- `E_NOT_FOUND`：请求的 profile、文件或资源不存在。
 - `E_INTERACTIVE_REQUIRED`：命令需要交互选择，但启用了 `--non-interactive`。
 - `E_AMBIGUOUS_SELECTOR`：选择器匹配到多个 profile，需要改用 id 明确指定。
+
+### Mutation 命令的 JSON 输出
+
+当使用 `--format json` 时，`profile save`、`profile use`、`profile delete`、`profile import` 均返回结构化 JSON 对象：
+
+```json
+{ "ok": true, "action": "use", "id": "abc123", "name": "work", "message": "已切换到 profile: work (id: abc123)" }
+```
+
+TUI 取消操作返回 `"ok": false`、`"action": "cancel"`（退出码为 0）。
 
 推荐自动化处理方式：
 
 1. 尽量使用 `--non-interactive --format json`。
-2. 若出现 `E_AMBIGUOUS_SELECTOR`，先 `profile list` 获取候选，再用 id 重试。
-3. 若出现 `E_INTERACTIVE_REQUIRED`，改为显式传入 `id/name/email` 或使用 `--auto`。
+2. 若退出码为 `2`（`E_NOT_FOUND`），profile 或文件不存在，先创建。
+3. 若退出码为 `4`（`E_AMBIGUOUS_SELECTOR`），用 `profile list --format json` 获取候选，再用 id 重试。
+4. 若退出码为 `3`（`E_INTERACTIVE_REQUIRED`），改为显式传入 `id/name/email` 或使用 `--auto`。
 

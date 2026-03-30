@@ -99,6 +99,12 @@ pub enum ProfileCommand {
     #[command(long_about = "列出所有已保存 profile（名称、id、是否激活）。\n\n示例:\n  codex-switch profile list\n  codex-switch --format json profile list")]
     /// 列出所有已保存的 profile（名称、id、是否激活）
     List,
+    #[command(long_about = "查询单个 profile 的详情（按 id/name/email 选择）。\n\n示例:\n  codex-switch profile inspect abc123\n  codex-switch --format json profile inspect alice@example.com")]
+    /// 查询单个 profile 的详情（按 id/name/email 选择）
+    Inspect {
+        /// profile 选择器（id/显示名/邮箱）
+        selector: String,
+    },
 }
 
 #[cfg(test)]

@@ -19,9 +19,27 @@ struct AppPaths {
     switch_home: PathBuf,
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
+    if let Err(err) = run() {
+        let msg = format!("{err:#}");
+        eprintln!("错误: {msg}");
+        let code = if msg.contains("E_NOT_FOUND:") {
+            2
+        } else if msg.contains("E_INTERACTIVE_REQUIRED:") {
+            3
+        } else if msg.contains("E_AMBIGUOUS_SELECTOR:") {
+            4
+        } else {
+            1
+        };
+        std::process::exit(code);
+    }
+}
+
+fn run() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
     let allow_interactive = std::io::stdout().is_terminal() && !cli.non_interactive;
+    let format = cli.format;
 
     if let cli::Command::Completions { shell } = &cli.command {
         use clap::CommandFactory;
@@ -37,85 +55,134 @@ fn main() -> anyhow::Result<()> {
     let paths = resolve_app_paths()?;
 
     let output = match cli.command {
-        cli::Command::Account => auth::build_account_summary(&paths.codex_home)?.render(cli.format)?,
-        cli::Command::Doctor => build_doctor_output(&paths)?.render(cli.format)?,
+        cli::Command::Account => auth::build_account_summary(&paths.codex_home)?.render(format)?,
+        cli::Command::Doctor => build_doctor_output(&paths)?.render(format)?,
         cli::Command::Usage => {
             let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
-            model::UsageTableOutput::from_profiles(profiles).render(cli.format)?
+            model::UsageTableOutput::from_profiles(profiles).render(format)?
         }
         cli::Command::Profile { command } => match command {
             cli::ProfileCommand::Save { name } => {
                 profiles::save_profile(&paths.codex_home, &paths.switch_home, name.as_deref())?
+                    .render(format)?
             }
             cli::ProfileCommand::Use { name, auto } => {
                 if auto {
                     let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
                     if profiles.profiles.is_empty() {
-                        "暂无 profiles，可先使用 profile save 保存当前账号".to_string()
+                        anyhow::bail!(
+                            "E_NOT_FOUND: 暂无 profiles，请先使用 profile save 保存当前账号"
+                        );
                     } else if let Some(best) = profiles.best_profile() {
                         if profiles.active_profile.as_deref() == Some(best.id.as_str()) {
-                            format!(
-                                "当前已是最优 profile: {} ({})",
-                                best.name,
-                                best.email.as_deref().unwrap_or("")
-                            )
+                            model::MutationResult {
+                                ok: true,
+                                action: "use".to_string(),
+                                id: Some(best.id.clone()),
+                                name: Some(best.name.clone()),
+                                email: best.email.clone(),
+                                ids: None,
+                                count: None,
+                                message: format!(
+                                    "当前已是最优 profile: {} ({})",
+                                    best.name,
+                                    best.email.as_deref().unwrap_or("")
+                                ),
+                            }
+                            .render(format)?
                         } else {
-                            profiles::use_profile(&paths.codex_home, &paths.switch_home, &best.id)?
+                            profiles::use_profile(
+                                &paths.codex_home,
+                                &paths.switch_home,
+                                &best.id,
+                            )?
+                            .render(format)?
                         }
                     } else {
-                        "暂无 profiles，可先使用 profile save 保存当前账号".to_string()
+                        anyhow::bail!(
+                            "E_NOT_FOUND: 暂无 profiles，请先使用 profile save 保存当前账号"
+                        );
                     }
                 } else {
-                match name {
-                Some(name) => {
-                    let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
-                    let matches = matching_profiles_by_selector(&profiles, &name);
+                    match name {
+                        Some(name) => {
+                            let profiles = profiles::list_profiles(
+                                &paths.codex_home,
+                                &paths.switch_home,
+                            )?;
+                            let matches = matching_profiles_by_selector(&profiles, &name);
 
-                    if matches.len() > 1 {
-                        if !allow_interactive {
-                            anyhow::bail!(
-                                "E_AMBIGUOUS_SELECTOR: 存在多个匹配 profile，请使用 id 切换: {name}"
-                            );
+                            if matches.len() > 1 {
+                                if !allow_interactive {
+                                    anyhow::bail!(
+                                        "E_AMBIGUOUS_SELECTOR: 存在多个匹配 profile，请使用 id 切换: {name}"
+                                    );
+                                }
+                                let duplicate_output = model::ProfileListOutput {
+                                    active_profile: profiles.active_profile.clone(),
+                                    profiles: matches,
+                                };
+                                select_and_use_profile(
+                                    &paths.codex_home,
+                                    &paths.switch_home,
+                                    duplicate_output,
+                                )?
+                                .render(format)?
+                            } else if let Some(single) = matches.into_iter().next() {
+                                profiles::use_profile(
+                                    &paths.codex_home,
+                                    &paths.switch_home,
+                                    &single.id,
+                                )?
+                                .render(format)?
+                            } else {
+                                profiles::use_profile(
+                                    &paths.codex_home,
+                                    &paths.switch_home,
+                                    &name,
+                                )?
+                                .render(format)?
+                            }
                         }
-
-                        let duplicate_output = model::ProfileListOutput {
-                            active_profile: profiles.active_profile.clone(),
-                            profiles: matches,
-                        };
-
-                        select_and_use_profile(&paths.codex_home, &paths.switch_home, duplicate_output)?
-                    } else if let Some(single) = matches.into_iter().next() {
-                        profiles::use_profile(&paths.codex_home, &paths.switch_home, &single.id)?
-                    } else {
-                        profiles::use_profile(&paths.codex_home, &paths.switch_home, &name)?
+                        None => {
+                            let profiles = profiles::list_profiles(
+                                &paths.codex_home,
+                                &paths.switch_home,
+                            )?;
+                            if profiles.profiles.is_empty() {
+                                anyhow::bail!(
+                                    "E_NOT_FOUND: 暂无 profiles，请先使用 profile save 保存当前账号"
+                                );
+                            } else if !allow_interactive {
+                                anyhow::bail!(
+                                    "E_INTERACTIVE_REQUIRED: 未提供 profile 选择器，且当前为非交互模式；请传 name/email/id 或 --auto"
+                                )
+                            } else {
+                                select_and_use_profile(
+                                    &paths.codex_home,
+                                    &paths.switch_home,
+                                    profiles,
+                                )?
+                                .render(format)?
+                            }
+                        }
                     }
-                }
-                None => {
-                    let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
-                    if profiles.profiles.is_empty() {
-                        "暂无 profiles，可先使用 profile save 保存当前账号".to_string()
-                    } else if !allow_interactive {
-                        anyhow::bail!(
-                            "E_INTERACTIVE_REQUIRED: 未提供 profile 选择器，且当前为非交互模式；请传 name/email/id 或 --auto"
-                        )
-                    } else {
-                        select_and_use_profile(&paths.codex_home, &paths.switch_home, profiles)?
-                    }
-                }
-            }
                 }
             }
             cli::ProfileCommand::Delete { name } => {
                 let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
                 if profiles.profiles.is_empty() {
-                    "暂无 profiles，可先使用 profile save 保存当前账号".to_string()
+                    anyhow::bail!(
+                        "E_NOT_FOUND: 暂无 profiles，请先使用 profile save 保存当前账号"
+                    );
                 } else if let Some(selector) = name {
                     let matches = matching_profiles_by_selector(&profiles, &selector);
                     if matches.is_empty() {
-                        anyhow::bail!("未找到匹配的 profile: {selector}");
+                        anyhow::bail!("E_NOT_FOUND: 未找到匹配的 profile: {selector}");
                     } else if matches.len() == 1 {
                         let id = matches[0].id.clone();
                         profiles::delete_profiles(&paths.switch_home, &[id.as_str()])?
+                            .render(format)?
                     } else {
                         if !allow_interactive {
                             anyhow::bail!(
@@ -127,10 +194,22 @@ fn main() -> anyhow::Result<()> {
                             profiles: matches,
                         };
                         if let Some(selected) = tui::select_profiles_to_delete(candidates)? {
-                            let selected_ids = selected.iter().map(|p| p.id.as_str()).collect::<Vec<_>>();
+                            let selected_ids =
+                                selected.iter().map(|p| p.id.as_str()).collect::<Vec<_>>();
                             profiles::delete_profiles(&paths.switch_home, &selected_ids)?
+                                .render(format)?
                         } else {
-                            "已取消删除".to_string()
+                            model::MutationResult {
+                                ok: false,
+                                action: "cancel".to_string(),
+                                id: None,
+                                name: None,
+                                email: None,
+                                ids: None,
+                                count: None,
+                                message: "已取消删除".to_string(),
+                            }
+                            .render(format)?
                         }
                     }
                 } else if !allow_interactive {
@@ -138,28 +217,91 @@ fn main() -> anyhow::Result<()> {
                         "E_INTERACTIVE_REQUIRED: 未提供删除选择器，且当前为非交互模式；请传 name/email/id"
                     )
                 } else if let Some(selected) = tui::select_profiles_to_delete(profiles)? {
-                    let selected_ids = selected.iter().map(|profile| profile.id.as_str()).collect::<Vec<_>>();
+                    let selected_ids =
+                        selected.iter().map(|profile| profile.id.as_str()).collect::<Vec<_>>();
                     profiles::delete_profiles(&paths.switch_home, &selected_ids)?
+                        .render(format)?
                 } else {
-                    "已取消删除".to_string()
+                    model::MutationResult {
+                        ok: false,
+                        action: "cancel".to_string(),
+                        id: None,
+                        name: None,
+                        email: None,
+                        ids: None,
+                        count: None,
+                        message: "已取消删除".to_string(),
+                    }
+                    .render(format)?
                 }
             }
-            cli::ProfileCommand::Backup { setup } => backup::run_backup(&paths.switch_home, setup)?,
-            cli::ProfileCommand::Restore { setup } => backup::run_restore(&paths.switch_home, setup)?,
+            cli::ProfileCommand::Backup { setup } => {
+                backup::run_backup(&paths.switch_home, setup)?
+            }
+            cli::ProfileCommand::Restore { setup } => {
+                backup::run_restore(&paths.switch_home, setup)?
+            }
             cli::ProfileCommand::Import { path, cpa } => {
                 let import_path = PathBuf::from(path);
-                let format = if cpa {
+                let fmt = if cpa {
                     profiles::ImportFormat::Cpa
                 } else {
                     profiles::ImportFormat::Standard
                 };
-                profiles::import_profiles(&paths.codex_home, &paths.switch_home, &import_path, format)?
+                profiles::import_profiles(
+                    &paths.codex_home,
+                    &paths.switch_home,
+                    &import_path,
+                    fmt,
+                )?
+                .render(format)?
             }
             cli::ProfileCommand::List => {
-                profiles::list_profiles(&paths.codex_home, &paths.switch_home)?.render(cli.format)?
+                profiles::list_profiles(&paths.codex_home, &paths.switch_home)?
+                    .render(format)?
+            }
+            cli::ProfileCommand::Inspect { selector } => {
+                let profiles =
+                    profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
+                let matches = matching_profiles_by_selector(&profiles, &selector);
+                match matches.len() {
+                    0 => {
+                        // 尝试精确 id 匹配（selector 未匹配显示名/邮箱时兜底）
+                        if let Some(profile) =
+                            profiles.profiles.iter().find(|p| p.id == selector)
+                        {
+                            profile.render(format)?
+                        } else {
+                            anyhow::bail!("E_NOT_FOUND: 未找到 profile: {selector}")
+                        }
+                    }
+                    1 => matches[0].render(format)?,
+                    _ => {
+                        // 多个匹配时返回数组（JSON）或文本列表
+                        match format {
+                            cli::OutputFormat::Json => {
+                                serde_json::to_string_pretty(&matches)?
+                            }
+                            cli::OutputFormat::Text => matches
+                                .iter()
+                                .map(|p| {
+                                    format!(
+                                        "{} {} ({})",
+                                        if p.active { "●" } else { "○" },
+                                        p.name,
+                                        p.id
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                        }
+                    }
+                }
             }
         },
-        cli::Command::Completions { .. } => unreachable!("completions handled before app paths"),
+        cli::Command::Completions { .. } => {
+            unreachable!("completions handled before app paths")
+        }
     };
 
     if !output.is_empty() {
@@ -173,11 +315,20 @@ fn select_and_use_profile(
     codex_home: &std::path::Path,
     switch_home: &std::path::Path,
     candidates: model::ProfileListOutput,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<model::MutationResult> {
     if let Some(selected) = tui::select_profile(candidates)? {
         profiles::use_profile(codex_home, switch_home, &selected.id)
     } else {
-        Ok("已取消切换".to_string())
+        Ok(model::MutationResult {
+            ok: false,
+            action: "cancel".to_string(),
+            id: None,
+            name: None,
+            email: None,
+            ids: None,
+            count: None,
+            message: "已取消切换".to_string(),
+        })
     }
 }
 

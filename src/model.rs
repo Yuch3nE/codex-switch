@@ -44,6 +44,37 @@ impl AccountSummary {
     }
 }
 
+/// mutation 命令（save/use/delete/import/cancel）的结构化返回值。
+/// `--format text` 时输出 `message`；`--format json` 时序列化完整字段。
+#[derive(Debug, Clone, Serialize)]
+pub struct MutationResult {
+    /// 操作是否成功执行（cancel 时为 false，但不是错误）
+    pub ok: bool,
+    /// 操作类型：save / use / delete / import / cancel
+    pub action: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    /// delete / import 操作影响的 id 列表
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<usize>,
+    pub message: String,
+}
+
+impl MutationResult {
+    pub fn render(&self, format: OutputFormat) -> anyhow::Result<String> {
+        match format {
+            OutputFormat::Json => Ok(serde_json::to_string_pretty(self)?),
+            OutputFormat::Text => Ok(self.message.clone()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DoctorOutput {
     pub codex_home: String,
@@ -707,6 +738,25 @@ pub struct ProfileSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secondary: Option<PrimaryRateLimit>,
     pub active: bool,
+}
+
+impl ProfileSummary {
+    pub fn render(&self, format: OutputFormat) -> anyhow::Result<String> {
+        match format {
+            OutputFormat::Json => Ok(serde_json::to_string_pretty(self)?),
+            OutputFormat::Text => Ok(render_panel(
+                "Profile 详情",
+                &[
+                    render_row("id          ", &self.id),
+                    render_row("名称        ", &self.name),
+                    render_row("邮箱        ", self.email.as_deref().unwrap_or("")),
+                    render_row("订阅等级    ", self.subscription_plan.as_deref().unwrap_or("")),
+                    render_row("account_id  ", self.account_id.as_deref().unwrap_or("")),
+                    closing_row("激活        ", if self.active { "是" } else { "否" }),
+                ],
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

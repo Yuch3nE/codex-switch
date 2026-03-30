@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::{
     auth,
-    model::{PrimaryRateLimit, ProfileListOutput, ProfileSummary},
+    model::{MutationResult, PrimaryRateLimit, ProfileListOutput, ProfileSummary},
     sessions,
 };
 
@@ -23,10 +23,10 @@ pub fn save_profile(
     codex_home: &Path,
     switch_home: &Path,
     name: Option<&str>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<MutationResult> {
     let current_auth = codex_home.join("auth.json");
     if !current_auth.exists() {
-        bail!("当前 auth.json 不存在");
+        bail!("E_NOT_FOUND: 当前 auth.json 不存在");
     }
 
     let auth_file = auth::load_auth_file(&current_auth)?;
@@ -34,6 +34,7 @@ pub fn save_profile(
     let display_name = resolve_display_name(name, summary.email.as_deref())?;
     let profile_id = generate_profile_id(switch_home, &display_name)?;
     let usage = current_usage_snapshot(codex_home)?;
+    let email = summary.email.clone();
 
     write_flat_profile(
         switch_home,
@@ -56,10 +57,17 @@ pub fn save_profile(
         },
     )?;
 
-    Ok(format!(
-        "已保存 profile: {} (id: {})",
-        display_name, profile_id
-    ))
+    let message = format!("已保存 profile: {} (id: {})", display_name, profile_id);
+    Ok(MutationResult {
+        ok: true,
+        action: "save".to_string(),
+        id: Some(profile_id),
+        name: Some(display_name),
+        email,
+        ids: None,
+        count: None,
+        message,
+    })
 }
 
 pub fn import_profiles(
@@ -67,14 +75,14 @@ pub fn import_profiles(
     switch_home: &Path,
     path: &Path,
     format: ImportFormat,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<MutationResult> {
     let state = read_state(switch_home)?;
     let files = collect_import_files(path, format)?;
 
     if files.is_empty() {
         match format {
-            ImportFormat::Standard => bail!("未找到可导入的 auth.json"),
-            ImportFormat::Cpa => bail!("未找到可导入的 CPA .json 文件"),
+            ImportFormat::Standard => bail!("E_NOT_FOUND: 未找到可导入的 auth.json"),
+            ImportFormat::Cpa => bail!("E_NOT_FOUND: 未找到可导入的 CPA .json 文件"),
         }
     }
 
@@ -84,10 +92,20 @@ pub fn import_profiles(
 
     write_state(switch_home, &state)?;
 
-    Ok(format!("已导入 {} 个 profile", files.len()))
+    let count = files.len();
+    Ok(MutationResult {
+        ok: true,
+        action: "import".to_string(),
+        id: None,
+        name: None,
+        email: None,
+        ids: None,
+        count: Some(count),
+        message: format!("已导入 {} 个 profile", count),
+    })
 }
 
-pub fn use_profile(codex_home: &Path, switch_home: &Path, name: &str) -> anyhow::Result<String> {
+pub fn use_profile(codex_home: &Path, switch_home: &Path, name: &str) -> anyhow::Result<MutationResult> {
     refresh_active_profile_snapshot(codex_home, switch_home)?;
 
     let resolved = resolve_profile(switch_home, name)?;
@@ -107,13 +125,19 @@ pub fn use_profile(codex_home: &Path, switch_home: &Path, name: &str) -> anyhow:
         },
     )?;
 
-    Ok(format!(
-        "已切换到 profile: {} (id: {})",
-        resolved.name, resolved.id
-    ))
+    Ok(MutationResult {
+        ok: true,
+        action: "use".to_string(),
+        id: Some(resolved.id.clone()),
+        name: Some(resolved.name.clone()),
+        email: None,
+        ids: None,
+        count: None,
+        message: format!("已切换到 profile: {} (id: {})", resolved.name, resolved.id),
+    })
 }
 
-pub fn delete_profiles(switch_home: &Path, profile_ids: &[&str]) -> anyhow::Result<String> {
+pub fn delete_profiles(switch_home: &Path, profile_ids: &[&str]) -> anyhow::Result<MutationResult> {
     if profile_ids.is_empty() {
         bail!("未选择要删除的 profile");
     }
@@ -132,11 +156,18 @@ pub fn delete_profiles(switch_home: &Path, profile_ids: &[&str]) -> anyhow::Resu
         deleted_ids.push(resolved.id);
     }
 
-    Ok(format!(
-        "已删除 {} 个 profile: {}",
-        deleted_ids.len(),
-        deleted_ids.join(", ")
-    ))
+    let count = deleted_ids.len();
+    let message = format!("已删除 {} 个 profile: {}", count, deleted_ids.join(", "));
+    Ok(MutationResult {
+        ok: true,
+        action: "delete".to_string(),
+        id: None,
+        name: None,
+        email: None,
+        ids: Some(deleted_ids),
+        count: Some(count),
+        message,
+    })
 }
 
 pub fn list_profiles(codex_home: &Path, switch_home: &Path) -> anyhow::Result<ProfileListOutput> {
@@ -529,7 +560,7 @@ fn resolve_profile(switch_home: &Path, selector: &str) -> anyhow::Result<Resolve
         return Ok(profile);
     }
 
-    bail!("profile 不存在: {selector}")
+    bail!("E_NOT_FOUND: profile 不存在: {selector}")
 }
 
 fn read_state(switch_home: &Path) -> anyhow::Result<ProfilesState> {
@@ -734,9 +765,9 @@ mod tests {
         )
         .unwrap();
 
-        let message = delete_profiles(switch_home, &["alpha", "beta"]).unwrap();
+        let result = delete_profiles(switch_home, &["alpha", "beta"]).unwrap();
 
-        assert!(message.contains("已删除 2 个 profile"));
+        assert!(result.message.contains("已删除 2 个 profile"));
         assert!(!flat_profile_path(switch_home, "alpha").exists());
         assert!(!flat_profile_path(switch_home, "beta").exists());
         assert!(flat_profile_path(switch_home, "gamma").exists());

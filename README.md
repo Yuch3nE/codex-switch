@@ -118,6 +118,14 @@ List all profiles:
 codex-switch profile list
 ```
 
+### profile inspect
+Get detailed info for a single profile (by id, name, or email):
+
+```bash
+codex-switch profile inspect abc123
+codex-switch --format json profile inspect alice@example.com
+```
+
 ### profile delete
 Delete by selection or exact name/email:
 
@@ -155,17 +163,34 @@ codex-switch profile restore --setup
 
 Exit codes:
 
-- `0`: command completed successfully.
-- `1`: command failed.
+| Code | Meaning |
+|------|---------|
+| `0` | Command completed successfully |
+| `1` | General runtime error |
+| `2` | Not found (`E_NOT_FOUND`) |
+| `3` | Interactive required (`E_INTERACTIVE_REQUIRED`) |
+| `4` | Ambiguous selector (`E_AMBIGUOUS_SELECTOR`) |
 
-Machine-readable error prefixes (currently used in non-interactive flows):
+Machine-readable error prefixes in stderr:
 
+- `E_NOT_FOUND`: the requested profile, file, or resource does not exist.
 - `E_INTERACTIVE_REQUIRED`: command requires interactive selection, but `--non-interactive` is enabled.
 - `E_AMBIGUOUS_SELECTOR`: selector matched multiple profiles and must be disambiguated by id.
+
+### Mutation JSON Output
+
+When `--format json` is set, `profile save`, `profile use`, `profile delete`, and `profile import` all return a structured JSON object instead of a plain string:
+
+```json
+{ "ok": true, "action": "use", "id": "abc123", "name": "work", "message": "已切换到 profile: work (id: abc123)" }
+```
+
+Cancelled TUI operations return `"ok": false` with `"action": "cancel"` (exit code 0).
 
 Recommended automation pattern:
 
 1. Run with `--non-interactive --format json` whenever possible.
-2. If `E_AMBIGUOUS_SELECTOR` occurs, fetch candidates with `profile list` and retry by id.
-3. If `E_INTERACTIVE_REQUIRED` occurs, re-run with explicit selector (`id/name/email`) or `--auto`.
+2. If exit code `2` (`E_NOT_FOUND`), the profile or file does not exist — create it first.
+3. If exit code `4` (`E_AMBIGUOUS_SELECTOR`), fetch candidates with `profile list --format json` and retry by `id`.
+4. If exit code `3` (`E_INTERACTIVE_REQUIRED`), re-run with explicit selector (`id/name/email`) or `--auto`.
 

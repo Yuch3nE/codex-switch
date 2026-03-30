@@ -333,7 +333,7 @@ fn profile_use_refreshes_previous_active_profile_snapshot() {
         .assert()
         .success();
 
-    let beta_profile = fs::read_to_string(switch_dir.join("profiles/beta/profile.json")).unwrap();
+    let beta_profile = fs::read_to_string(switch_dir.join("profiles/beta.json")).unwrap();
     let value: Value = serde_json::from_str(&beta_profile).unwrap();
 
     assert_eq!(
@@ -449,30 +449,32 @@ fn profile_import_cpa_file_normalizes_into_standard_auth_json() {
         .stdout(contains("\"email\": \"ohanna27@05020324.xyz\""))
         .stdout(contains("\"subscription_plan\": \"team\""));
 
-    let normalized_auth = fs::read_to_string(switch_dir.join("profiles/ohanna27/auth.json")).unwrap();
-    let value: Value = serde_json::from_str(&normalized_auth).unwrap();
+    let profile_file = fs::read_to_string(switch_dir.join("profiles/ohanna27.json")).unwrap();
+    let value: Value = serde_json::from_str(&profile_file).unwrap();
+    let auth = value.get("auth").unwrap();
 
-    assert_eq!(value.get("auth_mode").and_then(Value::as_str), Some("chatgpt"));
-    assert!(value.get("OPENAI_API_KEY").is_some());
-    assert!(value.get("OPENAI_API_KEY").unwrap().is_null());
-    assert_eq!(value.get("last_refresh").and_then(Value::as_str), Some("2026-03-28T00:28:17+08:00"));
+    assert_eq!(auth.get("auth_mode").and_then(Value::as_str), Some("chatgpt"));
+    assert!(auth.get("OPENAI_API_KEY").is_some());
+    assert!(auth.get("OPENAI_API_KEY").unwrap().is_null());
+    assert_eq!(auth.get("last_refresh").and_then(Value::as_str), Some("2026-03-28T00:28:17+08:00"));
     assert_eq!(
-        value
+        auth
             .get("tokens")
             .and_then(|tokens| tokens.get("account_id"))
             .and_then(Value::as_str),
         Some("account-team-789")
     );
     assert_eq!(
-        value
+        auth
             .get("tokens")
             .and_then(|tokens| tokens.get("refresh_token"))
             .and_then(Value::as_str),
         Some("rt_example")
     );
-    assert!(value.get("refresh_token").is_none());
-    assert!(value.get("access_token").is_none());
-    assert_auth_json_layout_matches_project_sample(&normalized_auth);
+    assert!(auth.get("refresh_token").is_none());
+    assert!(auth.get("access_token").is_none());
+    let auth_json = serde_json::to_string_pretty(auth).unwrap();
+    assert_auth_json_layout_matches_project_sample(&auth_json);
 }
 
 #[test]
@@ -493,12 +495,13 @@ fn profile_import_auto_detects_cpa_file_without_flag() {
         .success()
         .stdout(contains("已导入 1 个 profile"));
 
-    let normalized_auth = fs::read_to_string(switch_dir.join("profiles/ohanna27/auth.json")).unwrap();
-    let value: Value = serde_json::from_str(&normalized_auth).unwrap();
+    let profile_file = fs::read_to_string(switch_dir.join("profiles/ohanna27.json")).unwrap();
+    let value: Value = serde_json::from_str(&profile_file).unwrap();
+    let auth = value.get("auth").unwrap();
 
-    assert_eq!(value.get("auth_mode").and_then(Value::as_str), Some("chatgpt"));
+    assert_eq!(auth.get("auth_mode").and_then(Value::as_str), Some("chatgpt"));
     assert_eq!(
-        value
+        auth
             .get("tokens")
             .and_then(|tokens| tokens.get("account_id"))
             .and_then(Value::as_str),

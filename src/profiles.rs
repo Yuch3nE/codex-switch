@@ -29,21 +29,24 @@ pub fn save_profile(
         bail!("当前 auth.json 不存在");
     }
 
-    let summary = auth::build_account_summary_from_path(&current_auth)?;
+    let auth_file = auth::load_auth_file(&current_auth)?;
+    let summary = auth::build_account_summary_from_auth_file(auth_file.clone())?;
     let display_name = resolve_display_name(name, summary.email.as_deref())?;
     let profile_id = generate_profile_id(switch_home, &display_name)?;
-
-    let profile_dir = profiles_root(switch_home).join(&profile_id);
-    fs::create_dir_all(&profile_dir)?;
-    fs::copy(&current_auth, profile_dir.join("auth.json"))?;
     let usage = current_usage_snapshot(codex_home)?;
-    write_profile_metadata(
-        &profile_dir,
-        &ProfileMetadata {
+
+    write_flat_profile(
+        switch_home,
+        &profile_id,
+        &FlatProfile {
             name: display_name.clone(),
+            email: summary.email,
+            subscription_plan: summary.subscription_plan,
+            account_id: summary.account_id,
+            plan_type: usage.plan_type,
             primary: usage.primary,
             secondary: usage.secondary,
-            plan_type: usage.plan_type,
+            auth: serde_json::to_value(auth_file)?,
         },
     )?;
     write_state(
@@ -88,7 +91,6 @@ pub fn use_profile(codex_home: &Path, switch_home: &Path, name: &str) -> anyhow:
     refresh_active_profile_snapshot(codex_home, switch_home)?;
 
     let resolved = resolve_profile(switch_home, name)?;
-    let profile_auth = resolved.path.join("auth.json");
 
     let current_auth = codex_home.join("auth.json");
     let rollback_dir = profiles_root(switch_home).join(".rollback");
@@ -98,7 +100,7 @@ pub fn use_profile(codex_home: &Path, switch_home: &Path, name: &str) -> anyhow:
         copy_auth_json_with_canonicalization(&current_auth, &rollback_dir.join("auth.json"))?;
     }
 
-    copy_auth_json_with_canonicalization(&profile_auth, &current_auth)?;
+    auth::write_auth_file(&current_auth, &resolved.auth)?;
     write_state(
         switch_home,
         &ProfilesState {
@@ -127,7 +129,7 @@ pub fn delete_profiles(switch_home: &Path, profile_ids: &[&str]) -> anyhow::Resu
     let mut deleted_ids = Vec::new();
     for profile_id in profile_ids {
         let resolved = resolve_profile(switch_home, profile_id)?;
-        fs::remove_dir_all(&resolved.path)?;
+        fs::remove_file(flat_profile_path(switch_home, &resolved.id))?;
         deleted_ids.push(resolved.id);
     }
 
@@ -143,53 +145,65 @@ pub fn list_profiles(codex_home: &Path, switch_home: &Path) -> anyhow::Result<Pr
     fs::create_dir_all(&root)?;
     let state = read_state(switch_home)?;
     let active_usage = current_usage_snapshot(codex_home)?;
-    let mut profiles = Vec::new();
 
+    // 第一轮：惰性迁移旧格式目录
     for entry in fs::read_dir(&root)? {
         let entry = entry?;
         let path = entry.path();
         if !path.is_dir() {
             continue;
         }
-
-        let id = match path.file_name().and_then(|value| value.to_str()) {
-            Some(name) if !name.starts_with('.') => name.to_string(),
-            _ => continue,
+        let Some(id) = path.file_name().and_then(|v| v.to_str()) else {
+            continue;
         };
-
-        let auth_path = path.join("auth.json");
-        if !auth_path.exists() {
+        if id.starts_with('.') || !path.join("auth.json").exists() {
             continue;
         }
+        migrate_legacy_profile(switch_home, &path, id)?;
+    }
 
-        let metadata = read_profile_metadata(&path)?.unwrap_or_else(|| ProfileMetadata::with_name(id.clone()));
-
-        let summary = auth::build_account_summary_from_path(&auth_path)
+    // 第二轮：读取扁平 .json 文件
+    let mut profiles = Vec::new();
+    for entry in fs::read_dir(&root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|v| v.to_str()) else {
+            continue;
+        };
+        if file_name == "state.json" || file_name.starts_with('.') {
+            continue;
+        }
+        let Some(id) = file_name.strip_suffix(".json") else {
+            continue;
+        };
+        let flat: FlatProfile = serde_json::from_slice(&fs::read(&path)?)
             .with_context(|| format!("failed to read profile {id}"))?;
-
-        let is_active = state.active_profile.as_deref() == Some(id.as_str());
+        let is_active = state.active_profile.as_deref() == Some(id);
 
         profiles.push(ProfileSummary {
             active: is_active,
-            id,
-            name: metadata.name,
-            email: summary.email,
-            subscription_plan: summary.subscription_plan,
-            account_id: summary.account_id,
+            id: id.to_string(),
+            name: flat.name,
+            email: flat.email,
+            subscription_plan: flat.subscription_plan,
+            account_id: flat.account_id,
             primary: if is_active {
-                active_usage.primary.clone().or(metadata.primary)
+                active_usage.primary.clone().or(flat.primary)
             } else {
-                metadata.primary
+                flat.primary
             },
             secondary: if is_active {
-                active_usage.secondary.clone().or(metadata.secondary)
+                active_usage.secondary.clone().or(flat.secondary)
             } else {
-                metadata.secondary
+                flat.secondary
             },
             plan_type: if is_active {
-                active_usage.plan_type.clone().or(metadata.plan_type)
+                active_usage.plan_type.clone().or(flat.plan_type)
             } else {
-                metadata.plan_type
+                flat.plan_type
             },
         });
     }
@@ -265,11 +279,21 @@ fn import_profile_from_path(
     let summary = auth::build_account_summary_from_auth_file(auth_file.clone())?;
     let display_name = resolve_display_name(None, summary.email.as_deref())?;
     let profile_id = generate_profile_id(switch_home, &display_name)?;
-    let profile_dir = profiles_root(switch_home).join(profile_id);
 
-    fs::create_dir_all(&profile_dir)?;
-    auth::write_auth_file(&profile_dir.join("auth.json"), &auth_file)?;
-    write_profile_metadata(&profile_dir, &ProfileMetadata::with_name(display_name))
+    write_flat_profile(
+        switch_home,
+        &profile_id,
+        &FlatProfile {
+            name: display_name,
+            email: summary.email,
+            subscription_plan: summary.subscription_plan,
+            account_id: summary.account_id,
+            plan_type: None,
+            primary: None,
+            secondary: None,
+            auth: serde_json::to_value(auth_file)?,
+        },
+    )
 }
 
 fn load_import_auth_file(path: &Path, format: ImportFormat) -> anyhow::Result<auth::AuthFile> {
@@ -393,7 +417,8 @@ fn generate_profile_id(switch_home: &Path, display_name: &str) -> anyhow::Result
     let mut candidate = base.clone();
     let mut suffix = 2usize;
 
-    while root.join(&candidate).exists() {
+    // 同时检查新格式 (.json) 和旧格式 (目录) 以避免迁移期间冲突
+    while root.join(format!("{}.json", candidate)).exists() || root.join(&candidate).is_dir() {
         candidate = format!("{}-{}", base, suffix);
         suffix += 1;
     }
@@ -433,49 +458,66 @@ fn read_profile_metadata(profile_dir: &Path) -> anyhow::Result<Option<ProfileMet
     Ok(Some(serde_json::from_slice(&fs::read(path)?)?))
 }
 
-fn write_profile_metadata(profile_dir: &Path, metadata: &ProfileMetadata) -> anyhow::Result<()> {
-    fs::write(
-        profile_metadata_path(profile_dir),
-        serde_json::to_vec_pretty(metadata)?,
-    )?;
-    Ok(())
-}
-
 fn resolve_profile(switch_home: &Path, selector: &str) -> anyhow::Result<ResolvedProfile> {
-    let root = profiles_root(switch_home);
-    let direct_path = root.join(selector);
-    if direct_path.join("auth.json").exists() {
-        let metadata = read_profile_metadata(&direct_path)?.unwrap_or_else(|| ProfileMetadata::with_name(selector));
-        return Ok(ResolvedProfile {
-            id: selector.to_string(),
-            name: metadata.name,
-            path: direct_path,
-        });
+    // 优先尝试新格式：直接按 id 匹配
+    if let Some(flat) = read_flat_profile(switch_home, selector)? {
+        let auth = serde_json::from_value(flat.auth)
+            .with_context(|| format!("profile {selector} 中的 auth 数据格式无效"))?;
+        return Ok(ResolvedProfile { id: selector.to_string(), name: flat.name, auth });
     }
 
-    let mut matches = Vec::new();
+    // 尝试旧格式目录（按 id 精确匹配），并迁移
+    let root = profiles_root(switch_home);
+    let legacy_path = root.join(selector);
+    if legacy_path.is_dir() && legacy_path.join("auth.json").exists() {
+        migrate_legacy_profile(switch_home, &legacy_path, selector)?;
+        return resolve_profile(switch_home, selector);
+    }
+
+    // 按显示名搜索新格式文件和旧格式目录
+    let mut matches: Vec<ResolvedProfile> = Vec::new();
     if root.exists() {
         for entry in fs::read_dir(&root)? {
             let entry = entry?;
             let path = entry.path();
-            if !path.is_dir() {
+
+            if path.is_dir() {
+                let Some(id) = path.file_name().and_then(|v| v.to_str()) else {
+                    continue;
+                };
+                if id.starts_with('.') || !path.join("auth.json").exists() {
+                    continue;
+                }
+                let metadata =
+                    read_profile_metadata(&path)?.unwrap_or_else(|| ProfileMetadata::with_name(id));
+                if metadata.name == selector {
+                    migrate_legacy_profile(switch_home, &path, id)?;
+                    if let Some(flat) = read_flat_profile(switch_home, id)? {
+                        let auth = serde_json::from_value(flat.auth)
+                            .with_context(|| format!("profile {id} 中的 auth 数据格式无效"))?;
+                        matches.push(ResolvedProfile { id: id.to_string(), name: flat.name, auth });
+                    }
+                }
                 continue;
             }
 
-            let Some(id) = path.file_name().and_then(|value| value.to_str()) else {
+            if !path.is_file() {
+                continue;
+            }
+            let Some(file_name) = path.file_name().and_then(|v| v.to_str()) else {
                 continue;
             };
-            if id.starts_with('.') || !path.join("auth.json").exists() {
+            if file_name == "state.json" || file_name.starts_with('.') {
                 continue;
             }
-
-            let metadata = read_profile_metadata(&path)?.unwrap_or_else(|| ProfileMetadata::with_name(id));
-            if metadata.name == selector {
-                matches.push(ResolvedProfile {
-                    id: id.to_string(),
-                    name: metadata.name,
-                    path,
-                });
+            let Some(id) = file_name.strip_suffix(".json") else {
+                continue;
+            };
+            let flat: FlatProfile = serde_json::from_slice(&fs::read(&path)?)?;
+            if flat.name == selector {
+                let auth = serde_json::from_value(flat.auth)
+                    .with_context(|| format!("profile {id} 中的 auth 数据格式无效"))?;
+                matches.push(ResolvedProfile { id: id.to_string(), name: flat.name, auth });
             }
         }
     }
@@ -534,6 +576,70 @@ impl ProfileMetadata {
     }
 }
 
+/// 扁平化存储格式：每个 profile 对应一个 `profiles/<id>.json` 文件，
+/// 内嵌 auth 数据，避免每次 list 时解析 JWT。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct FlatProfile {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subscription_plan: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    account_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plan_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    primary: Option<PrimaryRateLimit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    secondary: Option<PrimaryRateLimit>,
+    /// auth.json 完整内容，直接内嵌为 JSON 对象
+    auth: Value,
+}
+
+fn flat_profile_path(switch_home: &Path, id: &str) -> PathBuf {
+    profiles_root(switch_home).join(format!("{id}.json"))
+}
+
+fn read_flat_profile(switch_home: &Path, id: &str) -> anyhow::Result<Option<FlatProfile>> {
+    let path = flat_profile_path(switch_home, id);
+    if !path.exists() {
+        return Ok(None);
+    }
+    Ok(Some(serde_json::from_slice(&fs::read(path)?)?))
+}
+
+fn write_flat_profile(switch_home: &Path, id: &str, profile: &FlatProfile) -> anyhow::Result<()> {
+    let root = profiles_root(switch_home);
+    fs::create_dir_all(&root)?;
+    fs::write(flat_profile_path(switch_home, id), serde_json::to_vec_pretty(profile)?)?;
+    Ok(())
+}
+
+/// 将旧格式目录（`profiles/<id>/auth.json` + `profile.json`）迁移为新扁平文件。
+fn migrate_legacy_profile(switch_home: &Path, legacy_dir: &Path, id: &str) -> anyhow::Result<()> {
+    let auth_path = legacy_dir.join("auth.json");
+    if !auth_path.exists() {
+        return Ok(());
+    }
+    let auth_file = auth::load_auth_file(&auth_path)?;
+    let metadata = read_profile_metadata(legacy_dir)?.unwrap_or_else(|| ProfileMetadata::with_name(id));
+    let summary = auth::build_account_summary_from_auth_file(auth_file.clone())?;
+    let flat = FlatProfile {
+        name: metadata.name,
+        email: summary.email,
+        subscription_plan: summary.subscription_plan,
+        account_id: summary.account_id,
+        plan_type: metadata.plan_type,
+        primary: metadata.primary,
+        secondary: metadata.secondary,
+        auth: serde_json::to_value(auth_file)?,
+    };
+    write_flat_profile(switch_home, id, &flat)?;
+    fs::remove_dir_all(legacy_dir)?;
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 struct UsageLimitSnapshot {
     primary: Option<PrimaryRateLimit>,
@@ -552,48 +658,65 @@ fn current_usage_snapshot(codex_home: &Path) -> anyhow::Result<UsageLimitSnapsho
 
 fn refresh_active_profile_snapshot(codex_home: &Path, switch_home: &Path) -> anyhow::Result<()> {
     let state = read_state(switch_home)?;
-    let Some(active_profile) = state.active_profile else {
+    let Some(active_id) = state.active_profile else {
         return Ok(());
     };
 
-    let profile_dir = profiles_root(switch_home).join(active_profile);
-    if !profile_dir.join("auth.json").exists() {
+    let Some(mut flat) = read_flat_profile(switch_home, &active_id)? else {
         return Ok(());
+    };
+
+    // 同步当前 auth.json（tokens 可能被 Codex 自动刷新）
+    let current_auth_path = codex_home.join("auth.json");
+    if current_auth_path.exists() {
+        if let Ok(auth_file) = auth::load_auth_file(&current_auth_path) {
+            if let Ok(summary) = auth::build_account_summary_from_auth_file(auth_file.clone()) {
+                flat.email = summary.email.or(flat.email);
+                flat.subscription_plan = summary.subscription_plan.or(flat.subscription_plan);
+                flat.account_id = summary.account_id.or(flat.account_id);
+            }
+            flat.auth = serde_json::to_value(auth_file)?;
+        }
     }
 
-    let mut metadata = read_profile_metadata(&profile_dir)?.unwrap_or_else(|| {
-        let name = profile_dir
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("profile");
-        ProfileMetadata::with_name(name)
-    });
     let usage = current_usage_snapshot(codex_home)?;
-    metadata.primary = usage.primary;
-    metadata.secondary = usage.secondary;
-    metadata.plan_type = usage.plan_type;
-    write_profile_metadata(&profile_dir, &metadata)
+    flat.primary = usage.primary;
+    flat.secondary = usage.secondary;
+    flat.plan_type = usage.plan_type;
+    write_flat_profile(switch_home, &active_id, &flat)
 }
 
 struct ResolvedProfile {
     id: String,
     name: String,
-    path: PathBuf,
+    auth: auth::AuthFile,
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
 
+    use serde_json::json;
     use tempfile::tempdir;
 
-    use super::{delete_profiles, profiles_root, write_profile_metadata, write_state, ProfileMetadata, ProfilesState};
+    use super::{delete_profiles, flat_profile_path, profiles_root, write_flat_profile, write_state, FlatProfile, ProfilesState};
 
-    fn write_profile(root: &std::path::Path, id: &str, name: &str) {
-        let profile_dir = root.join(id);
-        fs::create_dir_all(&profile_dir).unwrap();
-        fs::write(profile_dir.join("auth.json"), "{}").unwrap();
-        write_profile_metadata(&profile_dir, &ProfileMetadata::with_name(name)).unwrap();
+    fn write_profile(switch_home: &std::path::Path, id: &str, name: &str) {
+        write_flat_profile(
+            switch_home,
+            id,
+            &FlatProfile {
+                name: name.to_string(),
+                email: None,
+                subscription_plan: None,
+                account_id: None,
+                plan_type: None,
+                primary: None,
+                secondary: None,
+                auth: json!({}),
+            },
+        )
+        .unwrap();
     }
 
     #[test]
@@ -602,9 +725,9 @@ mod tests {
         let switch_home = temp.path();
         let root = profiles_root(switch_home);
 
-        write_profile(&root, "alpha", "alpha");
-        write_profile(&root, "beta", "beta");
-        write_profile(&root, "gamma", "gamma");
+        write_profile(switch_home, "alpha", "alpha");
+        write_profile(switch_home, "beta", "beta");
+        write_profile(switch_home, "gamma", "gamma");
         write_state(
             switch_home,
             &ProfilesState {
@@ -616,9 +739,9 @@ mod tests {
         let message = delete_profiles(switch_home, &["alpha", "beta"]).unwrap();
 
         assert!(message.contains("已删除 2 个 profile"));
-        assert!(!root.join("alpha").exists());
-        assert!(!root.join("beta").exists());
-        assert!(root.join("gamma").exists());
+        assert!(!flat_profile_path(switch_home, "alpha").exists());
+        assert!(!flat_profile_path(switch_home, "beta").exists());
+        assert!(flat_profile_path(switch_home, "gamma").exists());
 
         let state: serde_json::Value = serde_json::from_slice(&fs::read(root.join("state.json")).unwrap()).unwrap();
         assert_eq!(state.get("active_profile").and_then(serde_json::Value::as_str), Some("gamma"));
@@ -628,10 +751,9 @@ mod tests {
     fn delete_profiles_rejects_active_profile() {
         let temp = tempdir().unwrap();
         let switch_home = temp.path();
-        let root = profiles_root(switch_home);
 
-        write_profile(&root, "alpha", "alpha");
-        write_profile(&root, "beta", "beta");
+        write_profile(switch_home, "alpha", "alpha");
+        write_profile(switch_home, "beta", "beta");
         write_state(
             switch_home,
             &ProfilesState {
@@ -643,17 +765,16 @@ mod tests {
         let error = delete_profiles(switch_home, &["alpha"]).unwrap_err();
 
         assert!(error.to_string().contains("当前激活的 profile 不允许删除，请先切换到其他 profile"));
-        assert!(root.join("alpha").exists());
+        assert!(flat_profile_path(switch_home, "alpha").exists());
     }
 
     #[test]
     fn resolve_profile_prefers_exact_id_before_duplicate_display_name() {
         let temp = tempdir().unwrap();
         let switch_home = temp.path();
-        let root = profiles_root(switch_home);
 
-        write_profile(&root, "ohanna27", "ohanna27");
-        write_profile(&root, "ohanna27-2", "ohanna27");
+        write_profile(switch_home, "ohanna27", "ohanna27");
+        write_profile(switch_home, "ohanna27-2", "ohanna27");
 
         let resolved = super::resolve_profile(switch_home, "ohanna27").unwrap();
 

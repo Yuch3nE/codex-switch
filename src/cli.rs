@@ -54,8 +54,11 @@ pub enum ProfileCommand {
         #[arg(long, short = 'a', conflicts_with = "name")]
         auto: bool,
     },
-    /// 进入 TUI 多选删除器（不允许删除当前激活的 profile）
-    Delete,
+    /// 删除指定 profile；传入名称/邮箱直接删除，不传参数进入 TUI 多选删除器
+    Delete {
+        /// 要删除的 profile 显示名或邮箱；省略时进入 TUI 多选
+        name: Option<String>,
+    },
     /// 备份所有 profiles 到 WebDAV（有配置时直接执行，--setup 可重新配置）
     Backup {
         /// 打开 TUI 配置向导（重新配置 WebDAV 连接信息）
@@ -118,7 +121,16 @@ mod tests {
     fn profile_delete_parses_without_arguments() {
         let cli = Cli::try_parse_from(["codex-switch", "profile", "delete"]).unwrap();
         match profile_command(cli) {
-            ProfileCommand::Delete => {}
+            ProfileCommand::Delete { name } => assert!(name.is_none()),
+            _ => panic!("expected profile delete command"),
+        }
+    }
+
+    #[test]
+    fn profile_delete_accepts_name_argument() {
+        let cli = Cli::try_parse_from(["codex-switch", "profile", "delete", "work"]).unwrap();
+        match profile_command(cli) {
+            ProfileCommand::Delete { name } => assert_eq!(name.as_deref(), Some("work")),
             _ => panic!("expected profile delete command"),
         }
     }

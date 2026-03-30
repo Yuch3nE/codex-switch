@@ -9,10 +9,10 @@
 | `codex-switch account` | 查看当前登录账号信息 |
 | `codex-switch usage` | 查看所有账号额度总览 |
 | `codex-switch profile save` | 保存当前账号 |
-| `codex-switch profile use` | 切换账号（TUI 交互或直接指定名称） |
+| `codex-switch profile use` | 切换账号（TUI 交互或直接指定名称/邮箱） |
 | `codex-switch profile use --auto` | 自动切换到周额度剩余最高的账号 |
 | `codex-switch profile list` | 列出所有已保存账号 |
-| `codex-switch profile delete` | 删除账号（TUI 多选） |
+| `codex-switch profile delete` | 删除账号（TUI 多选，或直接指定名称/邮箱） |
 | `codex-switch profile import` | 导入 auth.json 文件 |
 | `codex-switch profile backup` | 备份所有账号到 WebDAV |
 | `codex-switch profile restore` | 从 WebDAV 恢复账号 |
@@ -96,6 +96,9 @@ codex-switch profile use
 # 直接指定名称
 codex-switch profile use work
 
+# 直接指定邮箱
+codex-switch profile use alice@example.com
+
 # 自动选择周额度剩余最高的账号
 codex-switch profile use --auto
 # 或使用短选项
@@ -115,10 +118,18 @@ codex-switch profile list
 ### 删除账号
 
 ```bash
+# TUI 多选界面
 codex-switch profile delete
+
+# 直接指定名称
+codex-switch profile delete work
+
+# 直接指定邮箱
+codex-switch profile delete alice@example.com
 ```
 
-进入 TUI 多选界面：`Space` 勾选，`Enter` 确认，`Esc`/`q` 退出。  
+不传参数时进入 TUI 多选界面：`Space` 勾选，`Enter` 确认，`Esc`/`q` 退出。  
+传入名称或邮箱时：如果匹配到唯一 profile 则直接删除；匹配到多个同名 profile 则进入 TUI 多选。  
 无法删除当前激活的账号，需先切换到其他账号。
 
 ### 导入账号

@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
                 match name {
                 Some(name) => {
                     let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
-                    let matches = matching_profiles_by_name(&profiles, &name);
+                    let matches = matching_profiles_by_selector(&profiles, &name);
 
                     if matches.len() > 1 {
                         if !std::io::stdout().is_terminal() {
@@ -79,6 +79,8 @@ fn main() -> anyhow::Result<()> {
                         };
 
                         select_and_use_profile(&paths.codex_home, &paths.switch_home, duplicate_output)?
+                    } else if let Some(single) = matches.into_iter().next() {
+                        profiles::use_profile(&paths.codex_home, &paths.switch_home, &single.id)?
                     } else {
                         profiles::use_profile(&paths.codex_home, &paths.switch_home, &name)?
                     }
@@ -94,10 +96,32 @@ fn main() -> anyhow::Result<()> {
             }
                 }
             }
-            cli::ProfileCommand::Delete => {
+            cli::ProfileCommand::Delete { name } => {
                 let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
                 if profiles.profiles.is_empty() {
                     "暂无 profiles，可先使用 profile save 保存当前账号".to_string()
+                } else if let Some(selector) = name {
+                    let matches = matching_profiles_by_selector(&profiles, &selector);
+                    if matches.is_empty() {
+                        anyhow::bail!("未找到匹配的 profile: {selector}");
+                    } else if matches.len() == 1 {
+                        let id = matches[0].id.clone();
+                        profiles::delete_profiles(&paths.switch_home, &[id.as_str()])?
+                    } else {
+                        if !std::io::stdout().is_terminal() {
+                            anyhow::bail!("存在多个同名 profile，请使用 id 指定: {selector}");
+                        }
+                        let candidates = model::ProfileListOutput {
+                            active_profile: profiles.active_profile.clone(),
+                            profiles: matches,
+                        };
+                        if let Some(selected) = tui::select_profiles_to_delete(candidates)? {
+                            let selected_ids = selected.iter().map(|p| p.id.as_str()).collect::<Vec<_>>();
+                            profiles::delete_profiles(&paths.switch_home, &selected_ids)?
+                        } else {
+                            "已取消删除".to_string()
+                        }
+                    }
                 } else if let Some(selected) = tui::select_profiles_to_delete(profiles)? {
                     let selected_ids = selected.iter().map(|profile| profile.id.as_str()).collect::<Vec<_>>();
                     profiles::delete_profiles(&paths.switch_home, &selected_ids)?
@@ -151,14 +175,17 @@ fn resolve_app_paths() -> anyhow::Result<AppPaths> {
     })
 }
 
-fn matching_profiles_by_name(
+fn matching_profiles_by_selector(
     profiles: &model::ProfileListOutput,
     selector: &str,
 ) -> Vec<model::ProfileSummary> {
     profiles
         .profiles
         .iter()
-        .filter(|profile| profile.name == selector)
+        .filter(|profile| {
+            profile.name == selector
+                || profile.email.as_deref() == Some(selector)
+        })
         .cloned()
         .collect()
 }
@@ -175,7 +202,7 @@ mod tests {
 
     use crate::model::{ProfileListOutput, ProfileSummary};
 
-    use super::{matching_profiles_by_name, resolve_app_paths};
+    use super::{matching_profiles_by_selector, resolve_app_paths};
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -280,10 +307,33 @@ mod tests {
             ],
         };
 
-        let matches = matching_profiles_by_name(&profiles, "ohanna27");
+        let matches = matching_profiles_by_selector(&profiles, "ohanna27");
 
         assert_eq!(matches.len(), 2);
         assert_eq!(matches[0].id, "ohanna27");
         assert_eq!(matches[1].id, "ohanna27-2");
+    }
+
+    #[test]
+    fn matching_profiles_by_selector_matches_email() {
+        let profiles = ProfileListOutput {
+            active_profile: None,
+            profiles: vec![ProfileSummary {
+                id: "alice1".to_string(),
+                name: "alice".to_string(),
+                email: Some("alice@example.com".to_string()),
+                subscription_plan: None,
+                account_id: None,
+                plan_type: None,
+                primary: None,
+                secondary: None,
+                active: false,
+            }],
+        };
+
+        let matches = matching_profiles_by_selector(&profiles, "alice@example.com");
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].id, "alice1");
     }
 }

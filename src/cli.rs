@@ -9,10 +9,10 @@ pub enum OutputFormat {
 
 #[derive(Debug, Parser)]
 #[command(name = "codex-switch")]
-#[command(about = "管理多个 Codex 账号 profile 并查看额度总览")]
+#[command(about = "管理多个 Codex 账号 profile，支持诊断、切换与额度总览")]
 #[command(long_about = "管理多个 Codex 账号 profile 并查看额度总览。\n\n\
     支持保存、切换、删除、导入 Codex 鉴权文件，\n\
-    以及通过 WebDAV 备份/恢复所有 profiles。")]
+    支持 doctor 环境诊断，以及通过 WebDAV 备份/恢复所有 profiles。")]
 pub struct Cli {
     #[arg(long, value_enum, default_value = "text", global = true, help = "输出格式")]
     pub format: OutputFormat,
@@ -28,9 +28,9 @@ pub struct Cli {
 pub enum Command {
     /// 显示当前激活账号的鉴权信息（邮箱、订阅方案、token 刷新时间）
     Account,
-    /// 诊断本地环境状态（路径、配置文件、profiles 数量）
+    /// 诊断本地环境状态（目录、配置文件、profiles、WebDAV 连通性）
     Doctor,
-    /// 显示所有已保存 profile 的额度快照表格（当前激活账号用实时数据）
+    /// 显示所有已保存 profile 的额度快照（当前激活账号优先用实时数据）
     Usage,
     /// 管理本地 Codex 账号 profiles
     Profile {
@@ -51,17 +51,17 @@ pub enum ProfileCommand {
         /// profile 显示名，省略时取邮箱 @ 前缀
         name: Option<String>,
     },
-    /// 切换到指定 profile；不传参数时进入 TUI 交互选择器
+    /// 切换到指定 profile；可传 id/name/email，不传参数时进入 TUI
     Use {
-        /// profile 显示名或 id；存在同名时自动进入 TUI 选择
+        /// profile 选择器（id/显示名/邮箱）；存在多匹配时进入 TUI
         name: Option<String>,
-        /// 自动选择周额度剩余最高的 profile 并切换
+        /// 自动选择周额度剩余最高的 profile 并切换（与 name 互斥）
         #[arg(long, short = 'a', conflicts_with = "name")]
         auto: bool,
     },
-    /// 删除指定 profile；传入名称/邮箱直接删除，不传参数进入 TUI 多选删除器
+    /// 删除指定 profile；可传 id/name/email，省略时进入 TUI 多选
     Delete {
-        /// 要删除的 profile 显示名或邮箱；省略时进入 TUI 多选
+        /// 删除选择器（id/显示名/邮箱）；省略时进入 TUI 多选
         name: Option<String>,
     },
     /// 备份所有 profiles 到 WebDAV（有配置时直接执行，--setup 可重新配置）

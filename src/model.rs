@@ -73,9 +73,17 @@ impl DoctorOutput {
     pub fn render(&self, format: OutputFormat) -> anyhow::Result<String> {
         match format {
             OutputFormat::Json => Ok(serde_json::to_string_pretty(self)?),
-            OutputFormat::Text => Ok(render_panel(
-                "环境诊断",
-                &[
+            OutputFormat::Text => {
+                let overall_ok = self.auth_exists
+                    && self.state_json_valid
+                    && self
+                        .active_profile_file_exists
+                        .unwrap_or(true)
+                    && self.webdav_reachable.unwrap_or(true);
+                Ok(render_panel(
+                    "环境诊断",
+                    &[
+                    render_row("总体健康   ", if overall_ok { "正常" } else { "需关注" }),
                     render_row("CODEX 目录   ", &self.codex_home),
                     render_row("SWITCH 目录  ", &self.switch_home),
                     render_row(
@@ -108,8 +116,8 @@ impl DoctorOutput {
                     render_row(
                         "WebDAV 连通  ",
                         match self.webdav_reachable {
-                            Some(true) => "可达",
-                            Some(false) => "不可达",
+                            Some(true) => "正常",
+                            Some(false) => "失败",
                             None => "未检查",
                         },
                     ),
@@ -136,8 +144,9 @@ impl DoctorOutput {
                         "当前 profile",
                         self.active_profile.as_deref().unwrap_or("未设置"),
                     ),
-                ],
-            )),
+                    ],
+                ))
+            }
         }
     }
 }

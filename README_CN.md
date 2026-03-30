@@ -6,16 +6,16 @@
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/your-repo/codex-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/your-repo/codex-switch/actions)
 
-管理多个 Codex 账号，一键切换，查看额度总览。
+用于管理多个 Codex 账号，快速切换并追踪额度使用情况。
 
 ## 功能
 
-- 保存当前账号为 profile。
-- 通过 id/name/email 切换 profile。
-- `--auto` 自动选择周额度剩余最高的账号。
-- 模糊时进入 TUI 选取。
-- 支持 profile 导入、WebDAV 备份与恢复。
-- 支持 5H / 周额度快照。
+- 将当前账号保存为可复用的 profile。
+- 支持通过 profile id、名称或邮箱切换账号。
+- 使用 `--auto` 自动选择周额度剩余最高的账号。
+- 未指定选择器或命中多个候选时进入 TUI 交互选择。
+- 支持 profile 导入，以及基于 WebDAV 的备份与恢复。
+- 支持查看 5H 与周额度快照。
 
 ## 命令
 
@@ -23,11 +23,11 @@
 |------|------|------|
 | 🧾 | `codex-switch account` | 查看当前账号信息 |
 | 📊 | `codex-switch usage` | 查看所有 profile 额度总览 |
-| 💾 | `codex-switch profile save [name]` | 保存当前账号为 profile |
+| 💾 | `codex-switch profile save [name]` | 将当前账号鉴权保存为 profile |
 | 🔁 | `codex-switch profile use [name_or_email]` | 切换 profile（省略或模糊进入 TUI） |
-| 🤖 | `codex-switch profile use --auto` | 自动选择周额度最优 profile |
+| 🤖 | `codex-switch profile use --auto` | 自动选择周额度最优的 profile |
 | 📋 | `codex-switch profile list` | 列出 profile |
-| 🗑️ | `codex-switch profile delete [name_or_email]` | 删除 profile |
+| 🗑️ | `codex-switch profile delete [name_or_email]` | 通过选择器或 TUI 删除 profile |
 | 📥 | `codex-switch profile import [path]` | 导入 auth.json / CPA 文件 |
 | ☁️ | `codex-switch profile backup` | 备份到 WebDAV |
 | 🔄 | `codex-switch profile restore` | 从 WebDAV 恢复 |
@@ -116,7 +116,7 @@ codex-switch profile restore --setup
 
 ## 说明
 
-- 活跃 profile 记录在 `~/.codex-auth-switch/state.json`。
-- `profile use` 有回滚机制（`rollback.json`）。
-- 支持 `--format json` 输出。
+- 当前活跃 profile 会记录到 `~/.codex-auth-switch/state.json`。
+- `profile use` 会写入 `rollback.json` 以便安全回退。
+- 支持使用 `--format json` 输出 JSON 格式结果。
 

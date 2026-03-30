@@ -6,16 +6,16 @@
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/your-repo/codex-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/your-repo/codex-switch/actions)
 
-A command-line manager for multiple Codex accounts.
+A command-line tool for managing multiple Codex accounts, switching quickly, and tracking quota usage.
 
 ## Features
 
-- Save current account as profile.
-- Switch accounts by profile id, name, or email.
-- Auto switch to the highest weekly remaining quota account (`--auto`).
-- TUI selection for ambiguous choice.
-- Profile import, export (WebDAV), and backup/restore workflows.
-- Quota usage report by 5H and weekly limits.
+- Save the current account as a reusable profile.
+- Switch by profile id, name, or email.
+- Auto-switch to the profile with the highest weekly remaining quota (`--auto`).
+- Use TUI selection when no selector is provided or multiple matches exist.
+- Import profiles and perform WebDAV backup/restore.
+- View quota snapshots for both 5H and weekly limits.
 
 ## Commands
 
@@ -23,11 +23,11 @@ A command-line manager for multiple Codex accounts.
 |------|---------|-------------|
 | 🧾 | `codex-switch account` | Show current account info |
 | 📊 | `codex-switch usage` | Display quota overview for all saved profiles |
-| 💾 | `codex-switch profile save [name]` | Save current auth as profile |
+| 💾 | `codex-switch profile save [name]` | Save current account auth as a profile |
 | 🔁 | `codex-switch profile use [name_or_email]` | Switch to profile (TUI when omitted or ambiguous) |
-| 🤖 | `codex-switch profile use --auto` | Select and switch to best weekly quota profile |
+| 🤖 | `codex-switch profile use --auto` | Select and switch to the best weekly quota profile |
 | 📋 | `codex-switch profile list` | List saved profiles |
-| 🗑️ | `codex-switch profile delete [name_or_email]` | Delete profile(s) |
+| 🗑️ | `codex-switch profile delete [name_or_email]` | Delete profile(s) by selector or TUI |
 | 📥 | `codex-switch profile import [path]` | Import auth.json or CPA JSON files |
 | ☁️ | `codex-switch profile backup` | Backup profiles to WebDAV |
 | 🔄 | `codex-switch profile restore` | Restore profiles from WebDAV |
@@ -125,7 +125,7 @@ codex-switch profile restore --setup
 
 ## Notes
 
-- Active profile updates state in ~/.codex-auth-switch/state.json.
-- `profile use` records a rollback copy for safety.
-- Uses JSON output support with `--format json`.
+- Active profile state is tracked in ~/.codex-auth-switch/state.json.
+- `profile use` writes a rollback copy for safer switching.
+- JSON output is available with `--format json`.
 

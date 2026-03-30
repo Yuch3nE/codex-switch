@@ -24,10 +24,10 @@
 | 🧾 | `codex-switch account` | 查看当前账号信息 |
 | 📊 | `codex-switch usage` | 查看所有 profile 额度总览 |
 | 💾 | `codex-switch profile save [name]` | 保存当前账号为 profile |
-| 🔁 | `codex-switch profile use [name|email]` | 切换 profile（省略或模糊进入 TUI） |
+| 🔁 | `codex-switch profile use [name_or_email]` | 切换 profile（省略或模糊进入 TUI） |
 | 🤖 | `codex-switch profile use --auto` | 自动选择周额度最优 profile |
 | 📋 | `codex-switch profile list` | 列出 profile |
-| 🗑️ | `codex-switch profile delete [name|email]` | 删除 profile |
+| 🗑️ | `codex-switch profile delete [name_or_email]` | 删除 profile |
 | 📥 | `codex-switch profile import [path]` | 导入 auth.json / CPA 文件 |
 | ☁️ | `codex-switch profile backup` | 备份到 WebDAV |
 | 🔄 | `codex-switch profile restore` | 从 WebDAV 恢复 |

@@ -24,10 +24,10 @@ A command-line manager for multiple Codex accounts.
 | 🧾 | `codex-switch account` | Show current account info |
 | 📊 | `codex-switch usage` | Display quota overview for all saved profiles |
 | 💾 | `codex-switch profile save [name]` | Save current auth as profile |
-| 🔁 | `codex-switch profile use [name|email]` | Switch to profile (TUI when omitted or ambiguous) |
+| 🔁 | `codex-switch profile use [name_or_email]` | Switch to profile (TUI when omitted or ambiguous) |
 | 🤖 | `codex-switch profile use --auto` | Select and switch to best weekly quota profile |
 | 📋 | `codex-switch profile list` | List saved profiles |
-| 🗑️ | `codex-switch profile delete [name|email]` | Delete profile(s) |
+| 🗑️ | `codex-switch profile delete [name_or_email]` | Delete profile(s) |
 | 📥 | `codex-switch profile import [path]` | Import auth.json or CPA JSON files |
 | ☁️ | `codex-switch profile backup` | Backup profiles to WebDAV |
 | 🔄 | `codex-switch profile restore` | Restore profiles from WebDAV |

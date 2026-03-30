@@ -349,7 +349,10 @@ pub fn webdav_list_backups(config: &BackupConfig) -> anyhow::Result<Vec<String>>
     let mut files: Vec<String> = hrefs
         .iter()
         .filter_map(|href| href_to_filename(href))
-        .filter(|name| name.starts_with("codex-switch-"))
+        .filter(|name| {
+            name.starts_with("codex-switch-")
+                && (name.ends_with(".zip") || name.ends_with(".zip.enc"))
+        })
         .collect();
     files.sort();
     Ok(files)
@@ -929,17 +932,25 @@ mod tests {
   <d:response><d:href>/bk/</d:href></d:response>
   <d:response><d:href>/bk/codex-switch-20260329-100000.zip</d:href></d:response>
   <d:response><d:href>/bk/codex-switch-20260328-090000.zip</d:href></d:response>
+  <d:response><d:href>/bk/codex-switch-20260327-080000.zip.enc</d:href></d:response>
+  <d:response><d:href>/bk/codex-switch-20260326-070000</d:href></d:response>
   <d:response><d:href>/bk/other-file.txt</d:href></d:response>
 </d:multistatus>"#;
 
         let files: Vec<String> = parse_propfind_hrefs(xml)
             .into_iter()
             .filter_map(|href| href_to_filename(&href))
-            .filter(|name| name.starts_with("codex-switch-"))
+            .filter(|name| {
+                name.starts_with("codex-switch-")
+                    && (name.ends_with(".zip") || name.ends_with(".zip.enc"))
+            })
             .collect();
 
-        assert_eq!(files.len(), 2);
+        assert_eq!(files.len(), 3);
         assert!(files.contains(&"codex-switch-20260329-100000.zip".to_string()));
         assert!(files.contains(&"codex-switch-20260328-090000.zip".to_string()));
+        assert!(files.contains(&"codex-switch-20260327-080000.zip.enc".to_string()));
+        // 文件夹格式的条目（无 .zip 扩展名）应被过滤
+        assert!(!files.iter().any(|f| f == "codex-switch-20260326-070000"));
     }
 }

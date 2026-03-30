@@ -1001,9 +1001,10 @@ fn draw_file_selector(frame: &mut ratatui::Frame<'_>, state: &BackupFileState) {
         .iter()
         .enumerate()
         .map(|(i, f)| {
+            let display = format_backup_display(f);
             let suffix = if i == 0 { "  (最新)" } else { "" };
             ListItem::new(Line::from(vec![
-                Span::raw(f.clone()),
+                Span::raw(display),
                 Span::styled(suffix, Style::default().fg(Color::Green)),
             ]))
         })
@@ -1178,6 +1179,40 @@ impl BackupFileState {
     fn previous(&mut self) {
         self.selected = nav_prev(self.selected, self.files.len());
     }
+}
+
+/// 将备份文件名解析为可读的显示文本。
+/// `codex-switch-20260330-153012.zip` → `2026-03-30 15:30:12  (zip)`
+/// `codex-switch-20260330-153012.zip.enc` → `2026-03-30 15:30:12  (zip.enc)`
+/// 解析失败时回退显示原始文件名。
+fn format_backup_display(filename: &str) -> String {
+    let stem = filename.strip_prefix("codex-switch-").unwrap_or(filename);
+    let (date_time_part, ext) = if let Some(s) = stem.strip_suffix(".zip.enc") {
+        (s, "加密")
+    } else if let Some(s) = stem.strip_suffix(".zip") {
+        (s, "明文")
+    } else {
+        return filename.to_string();
+    };
+    // date_time_part: "YYYYMMDD-HHMMSS"
+    if date_time_part.len() != 15 {
+        return filename.to_string();
+    }
+    let date = &date_time_part[..8];
+    let time = &date_time_part[9..];
+    if date_time_part.as_bytes()[8] != b'-' || date.len() != 8 || time.len() != 6 {
+        return filename.to_string();
+    }
+    format!(
+        "{}-{}-{} {}:{}:{}  ({})",
+        &date[..4],
+        &date[4..6],
+        &date[6..8],
+        &time[..2],
+        &time[2..4],
+        &time[4..6],
+        ext,
+    )
 }
 
 struct PasswordInputState {
@@ -1383,5 +1418,27 @@ mod tests {
         state.toggle_selected();
         assert!(!state.selected.contains("bob"));
         assert!(state.message.is_some());
+    }
+
+    #[test]
+    fn format_backup_display_parses_zip() {
+        assert_eq!(
+            super::format_backup_display("codex-switch-20260330-153012.zip"),
+            "2026-03-30 15:30:12  (明文)"
+        );
+    }
+
+    #[test]
+    fn format_backup_display_parses_encrypted() {
+        assert_eq!(
+            super::format_backup_display("codex-switch-20260330-153012.zip.enc"),
+            "2026-03-30 15:30:12  (加密)"
+        );
+    }
+
+    #[test]
+    fn format_backup_display_falls_back_on_bad_name() {
+        let bad = "something-else.zip";
+        assert_eq!(super::format_backup_display(bad), bad);
     }
 }

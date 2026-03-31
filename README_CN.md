@@ -5,6 +5,12 @@
 [![Rust](https://img.shields.io/badge/Rust-1.73-blue.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
+## 额度来源说明
+
+- 账号基础信息读取自 `~/.codex/auth.json`。
+- 额度快照读取自 `~/.codex/sessions/**/*.jsonl` 中的 `rate_limits` 字段。
+- 其中 `primary` 对应 5H 限额，`secondary` 对应周限额；free 账号通常只提供周限额，缺失值会显示为“未知”。
+
 用于管理多个 Codex 账号，快速切换并追踪额度使用情况。
 
 ## 功能

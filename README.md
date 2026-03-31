@@ -5,6 +5,12 @@
 [![Rust](https://img.shields.io/badge/Rust-1.73-blue.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
+## Quota Source Notes
+
+- Account metadata is read from `~/.codex/auth.json`.
+- Quota snapshots are read from the `rate_limits` field in `~/.codex/sessions/**/*.jsonl`.
+- `primary` maps to the 5H limit and `secondary` maps to the weekly limit; free accounts usually only expose the weekly limit, and missing values are shown as `unknown`.
+
 A command-line tool for managing multiple Codex accounts, switching quickly, and tracking quota usage.
 
 ## Features

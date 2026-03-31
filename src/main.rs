@@ -52,11 +52,18 @@ fn run() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    if matches!(&cli.command, cli::Command::Version) {
+        let output = model::VersionOutput::current().render(format)?;
+        println!("{output}");
+        return Ok(());
+    }
+
     let paths = resolve_app_paths()?;
 
     let output = match cli.command {
         cli::Command::Account => auth::build_account_summary(&paths.codex_home)?.render(format)?,
         cli::Command::Doctor => build_doctor_output(&paths)?.render(format)?,
+        cli::Command::Version => unreachable!("handled before path resolution"),
         cli::Command::Usage => {
             let profiles = profiles::list_profiles(&paths.codex_home, &paths.switch_home)?;
             model::UsageTableOutput::from_profiles(profiles).render(format)?

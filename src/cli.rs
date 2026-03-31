@@ -9,11 +9,11 @@ pub enum OutputFormat {
 
 #[derive(Debug, Parser)]
 #[command(name = "codex-switch")]
-#[command(about = "管理多个 Codex 账号 profile，支持诊断、切换与额度总览")]
+#[command(about = "管理多个 Codex 账号 profile，支持诊断、切换、版本信息与额度总览")]
 #[command(long_about = "管理多个 Codex 账号 profile 并查看额度总览。\n\n\
     支持保存、切换、删除、导入 Codex 鉴权文件，\n\
-    支持 doctor 环境诊断，以及通过 WebDAV 备份/恢复所有 profiles。")]
-#[command(after_long_help = "示例:\n  codex-switch account\n  codex-switch doctor\n  codex-switch usage --format json\n  codex-switch profile use --auto\n  codex-switch --non-interactive profile delete alpha")]
+    支持 doctor 环境诊断、version 版本信息，以及通过 WebDAV 备份/恢复所有 profiles。")]
+#[command(after_long_help = "示例:\n  codex-switch account\n  codex-switch doctor\n  codex-switch version\n  codex-switch usage --format json\n  codex-switch profile use --auto\n  codex-switch --non-interactive profile delete alpha")]
 pub struct Cli {
     #[arg(long, value_enum, default_value = "text", global = true, help = "输出格式")]
     pub format: OutputFormat,
@@ -33,6 +33,9 @@ pub enum Command {
     #[command(long_about = "诊断本地环境状态（目录、配置文件、profiles、WebDAV 连通性）。\n\n示例:\n  codex-switch doctor\n  codex-switch --format json doctor")]
     /// 诊断本地环境状态（目录、配置文件、profiles、WebDAV 连通性）
     Doctor,
+    #[command(long_about = "输出当前程序版本、git 信息和构建日期。\n\n示例:\n  codex-switch version\n  codex-switch --format json version")]
+    /// 输出当前程序版本、git 信息和构建日期
+    Version,
     #[command(long_about = "显示所有已保存 profile 的额度快照（当前激活账号优先用实时数据）。\n\n示例:\n  codex-switch usage\n  codex-switch --format json usage")]
     /// 显示所有已保存 profile 的额度快照（当前激活账号优先用实时数据）
     Usage,
@@ -204,6 +207,15 @@ mod tests {
         match cli.command {
             Command::Doctor => {}
             _ => panic!("expected doctor command"),
+        }
+    }
+
+    #[test]
+    fn version_parses() {
+        let cli = Cli::try_parse_from(["codex-switch", "version"]).unwrap();
+        match cli.command {
+            Command::Version => {}
+            _ => panic!("expected version command"),
         }
     }
 }

@@ -25,6 +25,46 @@ pub struct AccountSummary {
     pub organization_count: usize,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct VersionOutput {
+    pub version: String,
+    pub git_commit: String,
+    pub git_ref: String,
+    pub build_date: String,
+}
+
+impl VersionOutput {
+    pub fn current() -> Self {
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            git_commit: option_env!("CODEX_SWITCH_GIT_COMMIT")
+                .unwrap_or("unknown")
+                .to_string(),
+            git_ref: option_env!("CODEX_SWITCH_GIT_REF")
+                .unwrap_or("unknown")
+                .to_string(),
+            build_date: option_env!("CODEX_SWITCH_BUILD_DATE")
+                .unwrap_or("unknown")
+                .to_string(),
+        }
+    }
+
+    pub fn render(&self, format: OutputFormat) -> anyhow::Result<String> {
+        match format {
+            OutputFormat::Json => Ok(serde_json::to_string_pretty(self)?),
+            OutputFormat::Text => Ok(render_panel(
+                "版本信息",
+                &[
+                    render_row("版本号    ", &self.version),
+                    render_row("Git 提交  ", &self.git_commit),
+                    render_row("Git 引用  ", &self.git_ref),
+                    closing_row("构建日期  ", &self.build_date),
+                ],
+            )),
+        }
+    }
+}
+
 impl AccountSummary {
     pub fn render(&self, format: OutputFormat) -> anyhow::Result<String> {
         match format {

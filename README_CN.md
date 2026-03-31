@@ -28,7 +28,7 @@
 |------|------|------|
 | 🧾 | `codex-switch account` | 查看当前账号信息 |
 | 🩺 | `codex-switch doctor` | 诊断本地环境与 profile 状态 |
-| 🏷️ | `codex-switch version` | 显示版本号、git 信息和构建日期 |
+| 🏷️ | `codex-switch version` | 显示版本号、git 提交和构建日期（单行文本；支持 JSON） |
 | 📊 | `codex-switch usage` | 查看所有 profile 额度总览 |
 | 💾 | `codex-switch profile save [name]` | 将当前账号鉴权保存为 profile |
 | 🔁 | `codex-switch profile use [name_or_email]` | 切换 profile（省略或模糊进入 TUI） |
@@ -77,6 +77,14 @@ codex-switch account
 ```bash
 codex-switch doctor
 codex-switch --format json doctor
+```
+
+### version
+以单行纯文本显示版本号、git 提交和构建日期，同时也支持 `--format json`。
+
+```bash
+codex-switch version
+codex-switch --format json version
 ```
 
 健康检查项包括：

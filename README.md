@@ -28,7 +28,7 @@ A command-line tool for managing multiple Codex accounts, switching quickly, and
 |------|---------|-------------|
 | 🧾 | `codex-switch account` | Show current account info |
 | 🩺 | `codex-switch doctor` | Diagnose local environment and profile state |
-| 🏷️ | `codex-switch version` | Show version, git info, and build date |
+| 🏷️ | `codex-switch version` | Show version, git commit, and build date (single-line text; JSON supported) |
 | 📊 | `codex-switch usage` | Display quota overview for all saved profiles |
 | 💾 | `codex-switch profile save [name]` | Save current account auth as a profile |
 | 🔁 | `codex-switch profile use [name_or_email]` | Switch to profile (TUI when omitted or ambiguous) |
@@ -80,6 +80,14 @@ Show local diagnostic status (paths/files/profile count):
 ```bash
 codex-switch doctor
 codex-switch --format json doctor
+```
+
+### version
+Show version, git commit, and build date in a single-line text format. JSON output is also available.
+
+```bash
+codex-switch version
+codex-switch --format json version
 ```
 
 Health checks include:

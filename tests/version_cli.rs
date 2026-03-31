@@ -14,11 +14,10 @@ fn version_command_renders_text_output() {
 
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert_eq!(stdout.lines().count(), 1);
-    assert!(stdout.contains("版本信息"));
+    assert!(stdout.starts_with("Version "));
     assert!(stdout.contains(version));
-    assert!(stdout.contains("Git提交="));
-    assert!(stdout.contains("Git引用="));
-    assert!(stdout.contains("构建日期="));
+    assert!(stdout.contains("Git Commit "));
+    assert!(stdout.contains("Build "));
     assert!(!stdout.contains('╭'));
     assert!(!stdout.contains('╰'));
     assert!(!stdout.contains('│'));

@@ -53,8 +53,8 @@ impl VersionOutput {
         match format {
             OutputFormat::Json => Ok(serde_json::to_string_pretty(self)?),
             OutputFormat::Text => Ok(format!(
-                "版本信息: 版本号={} Git提交={} Git引用={} 构建日期={}",
-                self.version, self.git_commit, self.git_ref, self.build_date
+                "Version {}, Git Commit {}, Build {}",
+                self.version, self.git_commit, self.build_date
             )),
         }
     }

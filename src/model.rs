@@ -52,14 +52,9 @@ impl VersionOutput {
     pub fn render(&self, format: OutputFormat) -> anyhow::Result<String> {
         match format {
             OutputFormat::Json => Ok(serde_json::to_string_pretty(self)?),
-            OutputFormat::Text => Ok(render_panel(
-                "版本信息",
-                &[
-                    render_row("版本号    ", &self.version),
-                    render_row("Git 提交  ", &self.git_commit),
-                    render_row("Git 引用  ", &self.git_ref),
-                    closing_row("构建日期  ", &self.build_date),
-                ],
+            OutputFormat::Text => Ok(format!(
+                "版本信息: 版本号={} Git提交={} Git引用={} 构建日期={}",
+                self.version, self.git_commit, self.git_ref, self.build_date
             )),
         }
     }

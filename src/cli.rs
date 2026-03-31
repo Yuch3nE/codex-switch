@@ -33,8 +33,8 @@ pub enum Command {
     #[command(long_about = "诊断本地环境状态（目录、配置文件、profiles、WebDAV 连通性）。\n\n示例:\n  codex-switch doctor\n  codex-switch --format json doctor")]
     /// 诊断本地环境状态（目录、配置文件、profiles、WebDAV 连通性）
     Doctor,
-    #[command(long_about = "输出当前程序版本、git 信息和构建日期（纯文本输出，忽略 --format）。\n\n示例:\n  codex-switch version")]
-    /// 输出当前程序版本、git 信息和构建日期（纯文本输出）
+    #[command(long_about = "输出当前程序版本、git 信息和构建日期（文本输出为单行；可配合 --format json）。\n\n示例:\n  codex-switch version\n  codex-switch --format json version")]
+    /// 输出当前程序版本、git 信息和构建日期（文本输出为单行）
     Version,
     #[command(long_about = "显示所有已保存 profile 的额度快照（当前激活账号优先用实时数据）。\n\n示例:\n  codex-switch usage\n  codex-switch --format json usage")]
     /// 显示所有已保存 profile 的额度快照（当前激活账号优先用实时数据）

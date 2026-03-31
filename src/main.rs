@@ -53,7 +53,7 @@ fn run() -> anyhow::Result<()> {
     }
 
     if matches!(&cli.command, cli::Command::Version) {
-        let output = model::VersionOutput::current().render(cli::OutputFormat::Text)?;
+        let output = model::VersionOutput::current().render(format)?;
         println!("{output}");
         return Ok(());
     }

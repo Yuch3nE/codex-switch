@@ -1,22 +1,31 @@
 use assert_cmd::Command;
-use predicates::str::{contains, is_match};
+use serde_json::Value;
 
 #[test]
 fn version_command_renders_text_output() {
     let version = env!("CARGO_PKG_VERSION");
-    let mut cmd = Command::cargo_bin("codex-switch").unwrap();
-    cmd.arg("version");
+    let output = Command::cargo_bin("codex-switch")
+        .unwrap()
+        .arg("version")
+        .output()
+        .unwrap();
 
-    cmd.assert()
-        .success()
-        .stdout(contains("版本信息"))
-        .stdout(contains(version))
-        .stdout(is_match(r"Git 提交\s*│\s*[0-9a-f]{7,}").unwrap())
-        .stdout(is_match(r"构建日期\s*│\s*\d{4}-\d{2}-\d{2}T").unwrap());
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.lines().count(), 1);
+    assert!(stdout.contains("版本信息"));
+    assert!(stdout.contains(version));
+    assert!(stdout.contains("Git提交="));
+    assert!(stdout.contains("Git引用="));
+    assert!(stdout.contains("构建日期="));
+    assert!(!stdout.contains('╭'));
+    assert!(!stdout.contains('╰'));
+    assert!(!stdout.contains('│'));
 }
 
 #[test]
-fn version_command_ignores_json_flag() {
+fn version_command_renders_json_output() {
     let version = env!("CARGO_PKG_VERSION");
     let output = Command::cargo_bin("codex-switch")
         .unwrap()
@@ -25,8 +34,21 @@ fn version_command_ignores_json_flag() {
         .unwrap();
 
     assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("版本信息"));
-    assert!(stdout.contains(version));
-    assert!(serde_json::from_str::<serde_json::Value>(&stdout).is_err());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value.get("version").and_then(Value::as_str), Some(version));
+    assert!(value
+        .get("git_commit")
+        .and_then(Value::as_str)
+        .map(|sha| sha.len() >= 7)
+        .unwrap_or(false));
+    assert!(value
+        .get("git_ref")
+        .and_then(Value::as_str)
+        .map(|git_ref| !git_ref.is_empty())
+        .unwrap_or(false));
+    assert!(value
+        .get("build_date")
+        .and_then(Value::as_str)
+        .map(|date| date.contains('T'))
+        .unwrap_or(false));
 }
